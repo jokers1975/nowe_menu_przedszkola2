@@ -17,10 +17,12 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-# Dummy env żeby `next build` nie walił na brakujących przy SSG.
-# Prawdziwe wartości dostaje dopiero runtime z docker-compose.
-ENV NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co
-ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder
+# NEXT_PUBLIC_* sa inline'owane do client JS w build-time, wiec MUSZA
+# byc podane przed `next build`. Przekazujemy je jako build args.
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 RUN npm run build
 
 # ---------- Stage 3: runner (slim production) ----------
