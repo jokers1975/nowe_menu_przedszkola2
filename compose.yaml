@@ -1,0 +1,32 @@
+services:
+  app:
+    container_name: menu-catering
+    build:
+      context: https://github.com/jokers1975/najlepszycatering.git#main
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+
+      # --- Supabase Cloud ---
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+
+      # --- Postgres (Supabase pooler) ---
+      DATABASE_URL: ${DATABASE_URL}
+
+      # --- OpenRouter (opcjonalnie; mozna tez wpisac w /admin/settings) ---
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+
+      # --- Admin bootstrap ---
+      SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s

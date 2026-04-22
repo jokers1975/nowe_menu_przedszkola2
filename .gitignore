@@ -32,6 +32,17 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# project-specific
+/download/
+/drizzle/
+/supabase/.branches
+/supabase/.temp
+CLAUDE_CODE_PROMPT.md
+
+# Claude Code local state (not session memory — that lives outside repo)
+/.claude/
 
 # vercel
 .vercel
