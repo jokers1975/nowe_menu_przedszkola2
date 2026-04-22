@@ -36,8 +36,8 @@ Next.js 16 + Supabase Cloud (auth + Postgres) + Drizzle ORM + OpenRouter (AI).
 Z lokalnego komputera (jednorazowo, zanim zrobisz deploy):
 
 ```bash
-git clone https://github.com/jokers1975/najlepszycatering.git
-cd najlepszycatering
+git clone https://github.com/jokers1975/nowe_menu_przedszkola2.git
+cd nowe_menu_przedszkola2
 npm install
 cp .env.example .env
 # uzupełnij .env (szczególnie DATABASE_URL)

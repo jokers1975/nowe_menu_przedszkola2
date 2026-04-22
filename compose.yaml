@@ -2,7 +2,7 @@ services:
   app:
     container_name: menu-catering
     build:
-      context: https://github.com/jokers1975/najlepszycatering.git#main
+      context: https://github.com/jokers1975/nowe_menu_przedszkola2.git#main
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
