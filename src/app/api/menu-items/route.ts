@@ -222,6 +222,45 @@ export async function POST(req: NextRequest) {
         .returning();
 
       const pps = dish.preparedProducts ?? [];
+
+      // Fallback: dishes from picker/AI/editor don't carry preparedProducts,
+      // but still have vegFruit flag + allergen numbers. Persist them via one
+      // synthetic PP + one synthetic raw_ingredient so GET reconstructs them.
+      if (pps.length === 0 && (dish.vegFruit || (dish.allergens && dish.allergens.length > 0))) {
+        const [ppRow] = await tx
+          .insert(preparedProducts)
+          .values({
+            menuItemId: menuItemRow.id,
+            name: dish.name,
+            weightServedG: 0,
+            processingMethod: "surowe" as ProcessingMethod,
+            hasVegFruit: dish.vegFruit ?? false,
+          })
+          .returning();
+
+        const allergenNums = dish.allergens ?? [];
+        if (allergenNums.length > 0) {
+          const [ingRow] = await tx
+            .insert(rawIngredients)
+            .values({
+              preparedProductId: ppRow.id,
+              ingredientName: "—",
+              rawWeightG: 0,
+              unit: "g",
+            })
+            .returning();
+
+          const allergenRows = allergenNums
+            .map((n) => numberToId.get(n))
+            .filter((x): x is string => !!x)
+            .map((allergenId) => ({ ingredientId: ingRow.id, allergenId }));
+
+          if (allergenRows.length) {
+            await tx.insert(ingredientAllergens).values(allergenRows);
+          }
+        }
+      }
+
       for (const p of pps) {
         const [ppRow] = await tx
           .insert(preparedProducts)

@@ -71,8 +71,8 @@ export function MenuItemEditorModal({ open, onOpenChange, dish, onSave }: MenuIt
   };
 
   const Content = () => (
-    <div className="flex flex-col h-full sm:h-auto">
-      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-4">
+    <div className="flex flex-col flex-1 min-h-0 sm:h-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 space-y-4">
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">Nazwa</label>
           <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
@@ -164,7 +164,7 @@ export function MenuItemEditorModal({ open, onOpenChange, dish, onSave }: MenuIt
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent className="max-h-[90vh]">
+      <DrawerContent className="max-h-[90vh] flex flex-col">
         <DrawerHeader className="text-left">
           <DrawerTitle>{title}</DrawerTitle>
           <DrawerDescription>{description}</DrawerDescription>
