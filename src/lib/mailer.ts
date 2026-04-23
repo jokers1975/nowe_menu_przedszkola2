@@ -22,12 +22,20 @@ export type SendArgs = {
   attachments?: Attachment[];
 };
 
+function effectiveFromEmail(s: SmtpSettings): string | null {
+  const from = s.fromEmail?.trim();
+  if (from) return from;
+  const user = s.user?.trim();
+  if (user && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(user)) return user;
+  return null;
+}
+
 function requireSmtp(s: SmtpSettings): asserts s is SmtpSettings & {
   host: string;
   port: number;
-  fromEmail: string;
 } {
-  if (!s.host || !s.port || !s.fromEmail) {
+  const from = effectiveFromEmail(s);
+  if (!s.host || !s.port || !from) {
     throw new MailerNotConfiguredError(
       "Brakuje host, port lub adresu nadawcy — uzupełnij /admin/settings.",
     );
@@ -45,7 +53,7 @@ function buildTransport(s: SmtpSettings): Transporter {
 }
 
 function formatFrom(s: SmtpSettings): string {
-  const email = s.fromEmail!;
+  const email = effectiveFromEmail(s)!;
   return s.fromName ? `"${s.fromName.replace(/"/g, "'")}" <${email}>` : email;
 }
 
