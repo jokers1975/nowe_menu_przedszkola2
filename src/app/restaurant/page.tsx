@@ -120,7 +120,19 @@ export default function RestaurantSettingsPage() {
     }
   };
 
-  const addRecipient = () => {
+  const persistRecipients = async (next: EmailRecipient[]) => {
+    const res = await fetch("/api/me/profile", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emailRecipients: next }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? "Błąd zapisu odbiorców.");
+    const saved = Array.isArray(data.emailRecipients) ? data.emailRecipients : next;
+    setRecipients(saved);
+  };
+
+  const addRecipient = async () => {
     const email = newEmail.trim().toLowerCase();
     const label = newLabel.trim();
     if (!email || !EMAIL_RE.test(email)) {
@@ -135,14 +147,23 @@ export default function RestaurantSettingsPage() {
       setStatus({ kind: "err", msg: "Maksimum 50 odbiorców." });
       return;
     }
-    setRecipients([...recipients, { label: label.slice(0, 100), email }]);
-    setNewLabel("");
-    setNewEmail("");
-    setStatus(null);
+    try {
+      await persistRecipients([...recipients, { label: label.slice(0, 100), email }]);
+      setNewLabel("");
+      setNewEmail("");
+      setStatus({ kind: "ok", msg: "Dodano odbiorcę." });
+    } catch (e) {
+      setStatus({ kind: "err", msg: String(e) });
+    }
   };
 
-  const removeRecipient = (email: string) => {
-    setRecipients(recipients.filter((r) => r.email !== email));
+  const removeRecipient = async (email: string) => {
+    try {
+      await persistRecipients(recipients.filter((r) => r.email !== email));
+      setStatus({ kind: "ok", msg: "Usunięto odbiorcę." });
+    } catch (e) {
+      setStatus({ kind: "err", msg: String(e) });
+    }
   };
 
   const handleLogoClear = async () => {
@@ -306,7 +327,7 @@ export default function RestaurantSettingsPage() {
                   <Plus className="mr-1 h-4 w-4" /> Dodaj
                 </Button>
               </div>
-              <p className="text-xs text-slate-500">Pamiętaj, żeby zapisać ustawienia poniżej — zmiany są tylko lokalne do momentu kliknięcia „Zapisz ustawienia".</p>
+              <p className="text-xs text-slate-500">Odbiorcy zapisywani są automatycznie po dodaniu lub usunięciu.</p>
             </section>
 
             <div className="flex justify-end">

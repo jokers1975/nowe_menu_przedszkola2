@@ -36,14 +36,19 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as {
       from?: string;
       to?: string;
-      variant?: Variant;
+      variant?: Variant | "both";
       recipientEmails?: string[];
       subject?: string;
       message?: string;
     };
 
     const { from, to } = body;
-    const variant: Variant = body.variant === "sanepid" ? "sanepid" : "parents";
+    const variants: Variant[] =
+      body.variant === "both"
+        ? ["parents", "sanepid"]
+        : body.variant === "sanepid"
+          ? ["sanepid"]
+          : ["parents"];
 
     if (!from || !to || !DATE_RE.test(from) || !DATE_RE.test(to)) {
       return Response.json({ error: "from/to wymagane (YYYY-MM-DD)." }, { status: 400 });
@@ -73,7 +78,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { buffer, filename } = await buildMenuPdf({ userId, from, to, variant });
+    const pdfs = await Promise.all(
+      variants.map((v) => buildMenuPdf({ userId, from, to, variant: v })),
+    );
+    const attachments = pdfs.map((p) => ({
+      filename: p.filename,
+      content: p.buffer,
+      contentType: "application/pdf",
+    }));
 
     const defaults = defaultBody(profileRow?.restaurantName ?? null, from, to);
     const subject = body.subject?.trim() || `Jadłospis ${formatDateRangePL(from, to)}`;
@@ -88,13 +100,7 @@ export async function POST(req: NextRequest) {
           subject,
           text,
           html,
-          attachments: [
-            {
-              filename,
-              content: buffer,
-              contentType: "application/pdf",
-            },
-          ],
+          attachments,
         });
         results.push({ email: r.email, ok: true });
       } catch (err) {

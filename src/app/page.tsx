@@ -280,7 +280,7 @@ export default function Home() {
   const [complianceOpen, setComplianceOpen] = useState(false);
 
   const [sendMenuOpen, setSendMenuOpen] = useState(false);
-  const [sendMenuVariant, setSendMenuVariant] = useState<"parents" | "sanepid">("parents");
+  const [sendMenuVariant, setSendMenuVariant] = useState<"parents" | "sanepid" | "both">("parents");
   const [sendMenuLoading, setSendMenuLoading] = useState(false);
   const [sendMenuSending, setSendMenuSending] = useState(false);
   const [sendMenuResult, setSendMenuResult] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
@@ -288,7 +288,7 @@ export default function Home() {
   const [sendSelected, setSendSelected] = useState<Set<string>>(new Set());
   const [sendCustomMsg, setSendCustomMsg] = useState("");
 
-  const openSendMenu = async (variant: "parents" | "sanepid") => {
+  const openSendMenu = async (variant: "parents" | "sanepid" | "both") => {
     setSendMenuVariant(variant);
     setSendMenuOpen(true);
     setSendMenuResult(null);
@@ -845,7 +845,7 @@ export default function Home() {
           <DialogHeader>
             <DialogTitle>Wyślij menu e-mailem</DialogTitle>
             <DialogDescription>
-              Tydzień {format(workingDays[0], "d MMM", { locale: pl })} – {format(workingDays[4], "d MMM yyyy", { locale: pl })} · wariant {sendMenuVariant === "parents" ? "dla rodziców" : "Sanepid"}
+              Tydzień {format(workingDays[0], "d MMM", { locale: pl })} – {format(workingDays[4], "d MMM yyyy", { locale: pl })} · wariant {sendMenuVariant === "parents" ? "dla rodziców" : sendMenuVariant === "sanepid" ? "Sanepid" : "oba PDF"}
             </DialogDescription>
           </DialogHeader>
 
@@ -868,6 +868,14 @@ export default function Home() {
                   className={sendMenuVariant === "sanepid" ? "bg-emerald-600 hover:bg-emerald-700" : ""}
                 >
                   Sanepid
+                </Button>
+                <Button
+                  size="sm"
+                  variant={sendMenuVariant === "both" ? "default" : "outline"}
+                  onClick={() => setSendMenuVariant("both")}
+                  className={sendMenuVariant === "both" ? "bg-emerald-600 hover:bg-emerald-700" : ""}
+                >
+                  Oba
                 </Button>
               </div>
             </div>
