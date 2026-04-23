@@ -36,6 +36,10 @@ jobs:
             type=sha,prefix=sha-,format=short
             type=raw,value={{date 'YYYYMMDD-HHmm'}}
 
+      - name: Compute build time
+        id: buildtime
+        run: echo "value=$(date -u +'%Y-%m-%d %H:%M UTC')" >> "$GITHUB_OUTPUT"
+
       - name: Build & push
         uses: docker/build-push-action@v6
         with:
@@ -48,3 +52,5 @@ jobs:
           build-args: |
             NEXT_PUBLIC_SUPABASE_URL=${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
             NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+            NEXT_PUBLIC_BUILD_TIME=${{ steps.buildtime.outputs.value }}
+            NEXT_PUBLIC_COMMIT_SHA=${{ github.sha }}
