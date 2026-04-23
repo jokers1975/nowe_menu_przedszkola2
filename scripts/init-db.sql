@@ -13,6 +13,10 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 DO $$ BEGIN
+  CREATE TYPE "public"."menu_slot_type" AS ENUM('sniadanie', 'drugie_sniadanie', 'obiad_zupa', 'obiad_danie_glowne', 'podwieczorek', 'kolacja');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
   CREATE TYPE "public"."processing_method" AS ENUM('gotowanie', 'duszenie', 'pieczenie', 'smazenie', 'surowe');
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
@@ -195,3 +199,65 @@ INSERT INTO "allergens" ("number", "name", "description") VALUES
   (13, 'Lubin',             'Lubin i produkty pochodne'),
   (14, 'Miczaki',           'Miczaki i produkty pochodne')
 ON CONFLICT DO NOTHING;
+
+-- Cleanup: usun duplikaty alergenow zostawiajac najstarszy id.
+-- Strategia bez UPDATE (bezpieczna dla PK nawet gdy jest >2 dubli):
+-- 1) INSERT canonical-pary dla kazdego parenta, ON CONFLICT DO NOTHING.
+-- 2) DELETE wszystkie non-canonical rekordy w junction.
+-- 3) DELETE duplikaty w allergens.
+DO $$
+DECLARE
+  canonical uuid;
+  dup_number integer;
+BEGIN
+  FOR dup_number IN SELECT number FROM allergens GROUP BY number HAVING COUNT(*) > 1 LOOP
+    SELECT id INTO canonical FROM allergens WHERE number = dup_number ORDER BY id LIMIT 1;
+
+    INSERT INTO ingredient_allergens (ingredient_id, allergen_id)
+      SELECT DISTINCT ingredient_id, canonical FROM ingredient_allergens
+      WHERE allergen_id IN (SELECT id FROM allergens WHERE number = dup_number AND id <> canonical)
+      ON CONFLICT DO NOTHING;
+    DELETE FROM ingredient_allergens
+      WHERE allergen_id IN (SELECT id FROM allergens WHERE number = dup_number AND id <> canonical);
+
+    INSERT INTO dish_allergens (dish_id, allergen_id)
+      SELECT DISTINCT dish_id, canonical FROM dish_allergens
+      WHERE allergen_id IN (SELECT id FROM allergens WHERE number = dup_number AND id <> canonical)
+      ON CONFLICT DO NOTHING;
+    DELETE FROM dish_allergens
+      WHERE allergen_id IN (SELECT id FROM allergens WHERE number = dup_number AND id <> canonical);
+
+    INSERT INTO global_dish_allergens (global_dish_id, allergen_id)
+      SELECT DISTINCT global_dish_id, canonical FROM global_dish_allergens
+      WHERE allergen_id IN (SELECT id FROM allergens WHERE number = dup_number AND id <> canonical)
+      ON CONFLICT DO NOTHING;
+    DELETE FROM global_dish_allergens
+      WHERE allergen_id IN (SELECT id FROM allergens WHERE number = dup_number AND id <> canonical);
+
+    DELETE FROM allergens WHERE number = dup_number AND id <> canonical;
+  END LOOP;
+END $$;
+
+-- UNIQUE zeby nie powtorzyl sie problem
+DO $$ BEGIN
+  ALTER TABLE "allergens" ADD CONSTRAINT "allergens_number_unique" UNIQUE ("number");
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+-- ---------- Rozbicie slotow kalendarza na 6 wartosci ------------------------
+ALTER TABLE "menu_items" ADD COLUMN IF NOT EXISTS "slot_type" "menu_slot_type";
+
+UPDATE "menu_items" SET "slot_type" = CASE "meal_type"
+  WHEN 'sniadanie_kolacja' THEN 'sniadanie'::menu_slot_type
+  WHEN 'drugie_sniadanie_deser' THEN 'drugie_sniadanie'::menu_slot_type
+  WHEN 'obiad_zupa' THEN 'obiad_zupa'::menu_slot_type
+  WHEN 'obiad_danie_glowne' THEN 'obiad_danie_glowne'::menu_slot_type
+END
+WHERE "slot_type" IS NULL;
+
+ALTER TABLE "menu_items" ALTER COLUMN "slot_type" SET NOT NULL;
+ALTER TABLE "menu_items" ALTER COLUMN "slot_type" SET DEFAULT 'obiad_danie_glowne'::menu_slot_type;
+
+-- ---------- Profile: restauracja + wydawane posilki -------------------------
+ALTER TABLE "profiles" ADD COLUMN IF NOT EXISTS "restaurant_name" text;
+ALTER TABLE "profiles" ADD COLUMN IF NOT EXISTS "served_slots" "menu_slot_type"[]
+  DEFAULT ARRAY['sniadanie','drugie_sniadanie','obiad_zupa','obiad_danie_glowne','podwieczorek','kolacja']::menu_slot_type[];

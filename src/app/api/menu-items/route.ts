@@ -10,23 +10,19 @@ import {
 import { and, between, eq, inArray } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { UnauthorizedError, getCurrentUserId, unauthorizedResponse } from "@/lib/auth";
-import type {
-  Dish,
-  MealType,
-  PreparedProduct,
-  ProcessingMethod,
-  RawIngredient,
+import {
+  ALL_SLOTS,
+  slotToMealType,
+  type Dish,
+  type MealType,
+  type PreparedProduct,
+  type ProcessingMethod,
+  type RawIngredient,
+  type SlotType,
 } from "@/lib/sanepid-brain";
 
-const VALID_MEAL_TYPES: MealType[] = [
-  "sniadanie_kolacja",
-  "drugie_sniadanie_deser",
-  "obiad_zupa",
-  "obiad_danie_glowne",
-];
-
-function isMealType(v: string | null | undefined): v is MealType {
-  return typeof v === "string" && (VALID_MEAL_TYPES as string[]).includes(v);
+function isSlotType(v: string | null | undefined): v is SlotType {
+  return typeof v === "string" && (ALL_SLOTS as string[]).includes(v);
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -47,7 +43,7 @@ async function buildAllergenMaps(): Promise<{
 
 type MenuItemPayload = {
   date: string;
-  mealType: MealType;
+  slotType: SlotType;
   dish: Dish;
 };
 
@@ -167,7 +163,7 @@ export async function GET(req: NextRequest) {
       };
       // m.date to timestamp → normalizuj do YYYY-MM-DD żeby klient mógł filtrować po stringu.
       const dateKey = typeof m.date === "string" ? m.date.slice(0, 10) : String(m.date).slice(0, 10);
-      return { date: dateKey, mealType: m.mealType, dish };
+      return { date: dateKey, slotType: m.slotType as SlotType, mealType: m.mealType, dish };
     });
 
     return Response.json({ items: output });
@@ -183,17 +179,19 @@ export async function POST(req: NextRequest) {
   try {
     const userId = await getCurrentUserId();
     const body = (await req.json()) as MenuItemPayload;
-    const { date, mealType, dish } = body;
+    const { date, slotType, dish } = body;
 
     if (!DATE_RE.test(date ?? "")) {
       return Response.json({ error: "Nieprawidłowy format daty." }, { status: 400 });
     }
-    if (!isMealType(mealType)) {
-      return Response.json({ error: "Nieprawidłowy typ posiłku." }, { status: 400 });
+    if (!isSlotType(slotType)) {
+      return Response.json({ error: "Nieprawidłowy slot kalendarza." }, { status: 400 });
     }
     if (!dish?.name) {
       return Response.json({ error: "Danie musi mieć nazwę." }, { status: 400 });
     }
+
+    const mealType: MealType = slotToMealType(slotType);
 
     const { numberToId } = await buildAllergenMaps();
 
@@ -205,7 +203,7 @@ export async function POST(req: NextRequest) {
           and(
             eq(menuItems.userId, userId),
             eq(menuItems.date, date),
-            eq(menuItems.mealType, mealType),
+            eq(menuItems.slotType, slotType),
           ),
         );
 
@@ -215,6 +213,7 @@ export async function POST(req: NextRequest) {
           userId,
           date,
           mealType,
+          slotType,
           dietType: dish.diet ?? null,
           displayName: dish.name,
           sourceDishId: typeof dish.id === "string" ? dish.id : null,
@@ -311,7 +310,7 @@ export async function DELETE(req: NextRequest) {
   try {
     const userId = await getCurrentUserId();
     const date = req.nextUrl.searchParams.get("date");
-    const mealType = req.nextUrl.searchParams.get("mealType");
+    const slotType = req.nextUrl.searchParams.get("slotType");
     const from = req.nextUrl.searchParams.get("from");
     const to = req.nextUrl.searchParams.get("to");
 
@@ -335,8 +334,8 @@ export async function DELETE(req: NextRequest) {
     if (!date || !DATE_RE.test(date)) {
       return Response.json({ error: "Wymagana data YYYY-MM-DD." }, { status: 400 });
     }
-    if (!isMealType(mealType)) {
-      return Response.json({ error: "Nieprawidłowy typ posiłku." }, { status: 400 });
+    if (!isSlotType(slotType)) {
+      return Response.json({ error: "Nieprawidłowy slot kalendarza." }, { status: 400 });
     }
 
     await db
@@ -345,7 +344,7 @@ export async function DELETE(req: NextRequest) {
         and(
           eq(menuItems.userId, userId),
           eq(menuItems.date, date),
-          eq(menuItems.mealType, mealType),
+          eq(menuItems.slotType, slotType),
         ),
       );
 

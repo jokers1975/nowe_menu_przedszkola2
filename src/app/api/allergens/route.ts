@@ -13,7 +13,9 @@ export async function GET() {
       })
       .from(allergens)
       .orderBy(asc(allergens.number));
-    return Response.json({ allergens: rows });
+    const seen = new Set<number>();
+    const deduped = rows.filter((r) => (seen.has(r.number) ? false : (seen.add(r.number), true)));
+    return Response.json({ allergens: deduped });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return Response.json({ error: "Cannot load allergens", details: message }, { status: 500 });

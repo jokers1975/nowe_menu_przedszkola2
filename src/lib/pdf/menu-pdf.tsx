@@ -3,7 +3,7 @@ import path from "path";
 import { Document, Page, Text, View, StyleSheet, Font, Svg, Path, Circle, Image } from "@react-pdf/renderer";
 import { format, parseISO } from "date-fns";
 import { pl } from "date-fns/locale";
-import type { Dish, MealType } from "@/lib/sanepid-brain";
+import { ALL_SLOTS, type Dish, type MealType, type SlotType } from "@/lib/sanepid-brain";
 import { EU_ALLERGENS } from "@/lib/allergens";
 
 const FONTS_DIR = path.join(process.cwd(), "public", "fonts");
@@ -19,26 +19,23 @@ Font.register({
 
 Font.registerHyphenationCallback((word) => [word]);
 
-const MEAL_LABEL: Record<MealType, string> = {
-  sniadanie_kolacja: "Śniadanie / Kolacja",
-  drugie_sniadanie_deser: "II Śniadanie / Deser",
+const SLOT_LABEL_SANEPID: Record<SlotType, string> = {
+  sniadanie: "Śniadanie",
+  drugie_sniadanie: "II Śniadanie",
   obiad_zupa: "Zupa",
   obiad_danie_glowne: "Danie główne",
+  podwieczorek: "Podwieczorek",
+  kolacja: "Kolacja",
 };
 
-const MEAL_ICON: Record<MealType, string> = {
-  sniadanie_kolacja: "☀",
-  drugie_sniadanie_deser: "✦",
+const SLOT_ICON: Record<SlotType, string> = {
+  sniadanie: "☀",
+  drugie_sniadanie: "✦",
   obiad_zupa: "◉",
   obiad_danie_glowne: "◆",
+  podwieczorek: "✿",
+  kolacja: "☾",
 };
-
-const MEAL_ORDER: MealType[] = [
-  "sniadanie_kolacja",
-  "drugie_sniadanie_deser",
-  "obiad_zupa",
-  "obiad_danie_glowne",
-];
 
 const PROCESSING_LABEL: Record<string, string> = {
   gotowanie: "gotowanie",
@@ -50,6 +47,7 @@ const PROCESSING_LABEL: Record<string, string> = {
 
 export type MenuSlot = {
   date: string;
+  slotType: SlotType;
   mealType: MealType;
   dish: Dish;
 };
@@ -281,7 +279,7 @@ type DayColumn = {
   date: string;
   dow: string;
   dateLabel: string;
-  meals: Partial<Record<MealType, Dish>>;
+  meals: Partial<Record<SlotType, Dish>>;
 };
 
 function buildColumns(items: MenuSlot[]): DayColumn[] {
@@ -298,9 +296,18 @@ function buildColumns(items: MenuSlot[]): DayColumn[] {
       };
       map.set(it.date, col);
     }
-    col.meals[it.mealType] = it.dish;
+    col.meals[it.slotType] = it.dish;
   }
   return [...map.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function slotOrderFrom(items: MenuSlot[], servedSlots: SlotType[] | null): SlotType[] {
+  if (servedSlots && servedSlots.length > 0) {
+    return ALL_SLOTS.filter((s) => servedSlots.includes(s));
+  }
+  const present = new Set<SlotType>(items.map((i) => i.slotType));
+  const filtered = ALL_SLOTS.filter((s) => present.has(s));
+  return filtered.length > 0 ? filtered : ALL_SLOTS;
 }
 
 function AllergenPills({ codes }: { codes: number[] }) {
@@ -367,6 +374,7 @@ export function MenuPdf({
   from,
   to,
   logoUrl,
+  servedSlots,
 }: {
   items: MenuSlot[];
   variant: Variant;
@@ -374,23 +382,27 @@ export function MenuPdf({
   to: string;
   grocery?: GroceryItem[];
   logoUrl?: string | null;
+  servedSlots?: SlotType[] | null;
 }) {
   if (variant === "parents") {
-    return <MenuPdfParents items={items} from={from} to={to} logoUrl={logoUrl ?? null} />;
+    return <MenuPdfParents items={items} from={from} to={to} logoUrl={logoUrl ?? null} servedSlots={servedSlots ?? null} />;
   }
-  return <MenuPdfSanepid items={items} from={from} to={to} />;
+  return <MenuPdfSanepid items={items} from={from} to={to} servedSlots={servedSlots ?? null} />;
 }
 
 function MenuPdfSanepid({
   items,
   from,
   to,
+  servedSlots,
 }: {
   items: MenuSlot[];
   from: string;
   to: string;
+  servedSlots: SlotType[] | null;
 }) {
   const columns = buildColumns(items);
+  const SLOT_ORDER = slotOrderFrom(items, servedSlots);
   const subtitle = `${format(parseISO(from), "d MMMM", { locale: pl })} – ${format(parseISO(to), "d MMMM yyyy", { locale: pl })}`;
 
   return (
@@ -430,17 +442,17 @@ function MenuPdfSanepid({
             ))}
           </View>
 
-          {MEAL_ORDER.map((mt, rowIdx) => (
-            <View key={mt} style={rowIdx % 2 === 1 ? styles.bodyRowAlt : styles.bodyRow}>
+          {SLOT_ORDER.map((st, rowIdx) => (
+            <View key={st} style={rowIdx % 2 === 1 ? styles.bodyRowAlt : styles.bodyRow}>
               <View style={styles.mealCell}>
-                <Text style={styles.mealIcon}>{MEAL_ICON[mt]}</Text>
-                <Text style={styles.mealLabel}>{MEAL_LABEL[mt]}</Text>
+                <Text style={styles.mealIcon}>{SLOT_ICON[st]}</Text>
+                <Text style={styles.mealLabel}>{SLOT_LABEL_SANEPID[st]}</Text>
               </View>
               {columns.map((c, i) => {
-                const dish = c.meals[mt];
+                const dish = c.meals[st];
                 const cellStyle = i === columns.length - 1 ? styles.dayCellLast : styles.dayCell;
                 return (
-                  <View key={c.date + mt} style={cellStyle}>
+                  <View key={c.date + st} style={cellStyle}>
                     {dish ? <DishCellSanepid dish={dish} /> : <Text style={styles.empty}>—</Text>}
                   </View>
                 );
@@ -731,11 +743,13 @@ const parentsStyles = StyleSheet.create({
   },
 });
 
-const PARENTS_MEAL_LABEL: Record<MealType, string> = {
-  sniadanie_kolacja: "Śniadanie",
-  drugie_sniadanie_deser: "II Śniadanie",
+const PARENTS_SLOT_LABEL: Record<SlotType, string> = {
+  sniadanie: "Śniadanie",
+  drugie_sniadanie: "II Śniadanie",
   obiad_zupa: "Zupa",
   obiad_danie_glowne: "Danie główne",
+  podwieczorek: "Podwieczorek",
+  kolacja: "Kolacja",
 };
 
 // Proste piktogramy SVG dla każdego z 14 alergenów EU 1169/2011.
@@ -900,13 +914,16 @@ function MenuPdfParents({
   from,
   to,
   logoUrl,
+  servedSlots,
 }: {
   items: MenuSlot[];
   from: string;
   to: string;
   logoUrl: string | null;
+  servedSlots: SlotType[] | null;
 }) {
   const columns = buildColumns(items);
+  const SLOT_ORDER = slotOrderFrom(items, servedSlots);
   const weekLabel = `${format(parseISO(from), "d MMM", { locale: pl })} – ${format(parseISO(to), "d MMM yyyy", { locale: pl })}`;
   const usedAllergens = new Set<number>();
   for (const s of items) for (const a of s.dish.allergens) usedAllergens.add(a);
@@ -938,10 +955,10 @@ function MenuPdfParents({
 
         <View style={parentsStyles.mealHeaderRow}>
           <View style={parentsStyles.mealHeaderFirst} />
-          {MEAL_ORDER.map((mt) => (
-            <View key={mt} style={parentsStyles.mealHeaderCell}>
+          {SLOT_ORDER.map((st) => (
+            <View key={st} style={parentsStyles.mealHeaderCell}>
               <Text style={parentsStyles.mealHeaderText}>
-                {PARENTS_MEAL_LABEL[mt]}
+                {PARENTS_SLOT_LABEL[st]}
               </Text>
             </View>
           ))}
@@ -955,10 +972,10 @@ function MenuPdfParents({
                 <Text style={parentsStyles.dayLabelDow}>{c.dow}</Text>
                 <Text style={parentsStyles.dayLabelDate}>{c.dateLabel}</Text>
               </View>
-              {MEAL_ORDER.map((mt) => {
-                const dish = c.meals[mt];
+              {SLOT_ORDER.map((st) => {
+                const dish = c.meals[st];
                 return (
-                  <View key={mt} style={parentsStyles.mealCell}>
+                  <View key={st} style={parentsStyles.mealCell}>
                     {dish ? (
                       <>
                         <Text style={parentsStyles.mealDish}>{dish.name}</Text>

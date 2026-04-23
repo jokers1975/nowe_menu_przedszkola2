@@ -16,12 +16,14 @@ import {
 import { asc } from "drizzle-orm";
 import { UnauthorizedError, getCurrentUserId, unauthorizedResponse } from "@/lib/auth";
 import { MenuPdf, type MenuSlot, type Variant } from "@/lib/pdf/menu-pdf";
-import type {
-  Dish,
-  DishIngredient,
-  MealType,
-  PreparedProduct,
-  RawIngredient,
+import {
+  ALL_SLOTS,
+  type Dish,
+  type DishIngredient,
+  type MealType,
+  type PreparedProduct,
+  type RawIngredient,
+  type SlotType,
 } from "@/lib/sanepid-brain";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -178,15 +180,23 @@ export async function GET(req: NextRequest) {
         preparedProducts: pps,
       };
       const dateKey = typeof m.date === "string" ? m.date.slice(0, 10) : String(m.date).slice(0, 10);
-      return { date: dateKey, mealType: m.mealType as MealType, dish };
+      return { date: dateKey, slotType: m.slotType as SlotType, mealType: m.mealType as MealType, dish };
     });
 
-    // Pobierz logo z profilu użytkownika (jeśli ustawione)
-    const profileRow = await db.select({ logoUrl: profiles.logoUrl }).from(profiles).where(eq(profiles.id, userId)).limit(1);
+    // Pobierz logo + servedSlots z profilu użytkownika.
+    const profileRow = await db
+      .select({ logoUrl: profiles.logoUrl, servedSlots: profiles.servedSlots })
+      .from(profiles)
+      .where(eq(profiles.id, userId))
+      .limit(1);
     const logoUrl = profileRow[0]?.logoUrl ?? null;
+    const servedSlotsRaw = (profileRow[0]?.servedSlots as SlotType[] | null) ?? ALL_SLOTS;
+    const servedSlots = ALL_SLOTS.filter((s) => servedSlotsRaw.includes(s));
+
+    const filteredSlots = slots.filter((s) => servedSlots.includes(s.slotType));
 
     const buffer = await renderToBuffer(
-      <MenuPdf items={slots} variant={variant} from={from} to={to} logoUrl={logoUrl} />,
+      <MenuPdf items={filteredSlots} variant={variant} from={from} to={to} logoUrl={logoUrl} servedSlots={servedSlots} />,
     );
 
     const filename = `jadlospis_${variant}_${from}_${to}.pdf`;

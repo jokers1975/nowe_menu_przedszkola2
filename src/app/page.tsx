@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { format, addDays, startOfWeek } from "date-fns";
 import { pl } from "date-fns/locale";
-import { Calendar, ChefHat, FileText, Settings, Plus, Menu as MenuIcon, AlertTriangle, CheckCircle2, X, Pencil, Download, ChevronLeft, ChevronRight, Shield, Sparkles } from "lucide-react";
+import { Calendar, ChefHat, FileText, Settings, Plus, Menu as MenuIcon, AlertTriangle, CheckCircle2, X, Pencil, Download, ChevronLeft, ChevronRight, Shield, Sparkles, Store } from "lucide-react";
 import { Drawer, DrawerContent, DrawerTrigger, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -13,23 +13,25 @@ import { DishPickerModal } from "@/components/DishPickerModal";
 import { MenuItemEditorModal } from "@/components/MenuItemEditorModal";
 import { UserBar } from "@/components/UserBar";
 import { useRole } from "@/hooks/use-role";
-import { validateWeek, type DaySchedule, type Dish, type MealType } from "@/lib/sanepid-brain";
+import { validateWeek, ALL_SLOTS, slotToMealType, type DaySchedule, type Dish, type MealType, type SlotType } from "@/lib/sanepid-brain";
 
-const MEAL_CONFIG: Record<MealType, { label: string; shortLabel: string; icon: string }> = {
-  sniadanie_kolacja: { label: "Śniadanie / Kolacja", shortLabel: "Śniadanie", icon: "🌅" },
-  drugie_sniadanie_deser: { label: "II Śniadanie / Deser", shortLabel: "II śniadanie", icon: "🥪" },
+const SLOT_CONFIG: Record<SlotType, { label: string; shortLabel: string; icon: string }> = {
+  sniadanie: { label: "Śniadanie", shortLabel: "Śniadanie", icon: "🌅" },
+  drugie_sniadanie: { label: "II Śniadanie", shortLabel: "II śniadanie", icon: "🥪" },
   obiad_zupa: { label: "Obiad - Zupa", shortLabel: "Zupa", icon: "🍲" },
   obiad_danie_glowne: { label: "Obiad - Danie Główne", shortLabel: "Danie gł.", icon: "🍽️" },
+  podwieczorek: { label: "Podwieczorek", shortLabel: "Podwieczorek", icon: "🍎" },
+  kolacja: { label: "Kolacja", shortLabel: "Kolacja", icon: "🌙" },
 };
 
-// Kolory kart na widoku mobilnym — jeden kolor na typ posiłku (inspirowane referencją aplikacja.png)
-const MEAL_COLOR: Record<MealType, { card: string; chip: string; timeLabel: string }> = {
-  sniadanie_kolacja: {
+// Kolory kart na widoku mobilnym — jeden kolor na slot (inspirowane referencją aplikacja.png)
+const SLOT_COLOR: Record<SlotType, { card: string; chip: string; timeLabel: string }> = {
+  sniadanie: {
     card: "bg-gradient-to-br from-sky-400 to-sky-500 text-white",
     chip: "bg-white/20 text-white",
     timeLabel: "text-sky-100",
   },
-  drugie_sniadanie_deser: {
+  drugie_sniadanie: {
     card: "bg-gradient-to-br from-amber-400 to-amber-500 text-amber-950",
     chip: "bg-amber-950/10 text-amber-950",
     timeLabel: "text-amber-900",
@@ -44,9 +46,17 @@ const MEAL_COLOR: Record<MealType, { card: string; chip: string; timeLabel: stri
     chip: "bg-white/20 text-white",
     timeLabel: "text-violet-100",
   },
+  podwieczorek: {
+    card: "bg-gradient-to-br from-pink-400 to-pink-500 text-white",
+    chip: "bg-white/20 text-white",
+    timeLabel: "text-pink-100",
+  },
+  kolacja: {
+    card: "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white",
+    chip: "bg-white/20 text-white",
+    timeLabel: "text-indigo-100",
+  },
 };
-
-const MEAL_ORDER: MealType[] = ["sniadanie_kolacja", "drugie_sniadanie_deser", "obiad_zupa", "obiad_danie_glowne"];
 
 type ComplianceStatus = "ok" | "warn" | "error";
 type ComplianceMetric = {
@@ -82,6 +92,20 @@ export default function Home() {
   );
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [servedSlots, setServedSlots] = useState<SlotType[]>(ALL_SLOTS);
+
+  useEffect(() => {
+    fetch("/api/me/profile")
+      .then((r) => r.json())
+      .then((data: { servedSlots?: SlotType[] }) => {
+        if (Array.isArray(data.servedSlots) && data.servedSlots.length > 0) {
+          setServedSlots(data.servedSlots);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const SLOT_ORDER = useMemo<SlotType[]>(() => ALL_SLOTS.filter((s) => servedSlots.includes(s)), [servedSlots]);
   const [selectedDayIndex, setSelectedDayIndex] = useState<number>(() => {
     const today = new Date().getDay();
     // Pon=1..Pt=5 → index 0..4; weekend → 0
@@ -100,10 +124,10 @@ export default function Home() {
     }
     setSchedule(workingDays.map((date) => {
       const dayKey = format(date, "yyyy-MM-dd");
-      const slotMatches = (data.items as { date: string; mealType: MealType; dish: Dish }[])
+      const slotMatches = (data.items as { date: string; slotType: SlotType; mealType: MealType; dish: Dish }[])
         .filter((x) => x.date === dayKey);
-      const meals: Partial<Record<MealType, Dish>> = {};
-      for (const slot of slotMatches) meals[slot.mealType] = slot.dish;
+      const meals: Partial<Record<SlotType, Dish>> = {};
+      for (const slot of slotMatches) meals[slot.slotType] = slot.dish;
       return { date, meals };
     }));
   };
@@ -121,13 +145,13 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workingDays]);
 
-  const persistDish = async (dayIndex: number, mealType: MealType, dish: Dish) => {
+  const persistDish = async (dayIndex: number, slotType: SlotType, dish: Dish) => {
     try {
       const date = format(workingDays[dayIndex], "yyyy-MM-dd");
       const res = await fetch("/api/menu-items", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, mealType, dish }),
+        body: JSON.stringify({ date, slotType, dish }),
       });
       const data = await res.json();
       if (!res.ok) setApiError(data.error ?? "Błąd zapisu.");
@@ -137,10 +161,10 @@ export default function Home() {
     }
   };
 
-  const deleteDish = async (dayIndex: number, mealType: MealType) => {
+  const deleteDish = async (dayIndex: number, slotType: SlotType) => {
     try {
       const date = format(workingDays[dayIndex], "yyyy-MM-dd");
-      const res = await fetch(`/api/menu-items?date=${date}&mealType=${mealType}`, { method: "DELETE" });
+      const res = await fetch(`/api/menu-items?date=${date}&slotType=${slotType}`, { method: "DELETE" });
       if (!res.ok) {
         const data = await res.json();
         setApiError(data.error ?? "Błąd usuwania.");
@@ -170,39 +194,39 @@ export default function Home() {
 
   const [pickerState, setPickerState] = useState<{
     open: boolean;
-    mealType: MealType | "";
+    slotType: SlotType | "";
     dayIndex: number;
-  }>({ open: false, mealType: "", dayIndex: -1 });
+  }>({ open: false, slotType: "", dayIndex: -1 });
 
   const [editorState, setEditorState] = useState<{
     open: boolean;
     dayIndex: number;
-    mealType: MealType | "";
-  }>({ open: false, dayIndex: -1, mealType: "" });
+    slotType: SlotType | "";
+  }>({ open: false, dayIndex: -1, slotType: "" });
 
-  const handleOpenPicker = (mealType: MealType, dayIndex: number) => {
-    setPickerState({ open: true, mealType, dayIndex });
+  const handleOpenPicker = (slotType: SlotType, dayIndex: number) => {
+    setPickerState({ open: true, slotType, dayIndex });
   };
 
-  const handleOpenEditor = (dayIndex: number, mealType: MealType) => {
-    setEditorState({ open: true, dayIndex, mealType });
+  const handleOpenEditor = (dayIndex: number, slotType: SlotType) => {
+    setEditorState({ open: true, dayIndex, slotType });
   };
 
   const handleSaveEditor = (updated: Dish) => {
-    if (editorState.dayIndex === -1 || !editorState.mealType) return;
-    const { dayIndex, mealType } = editorState;
+    if (editorState.dayIndex === -1 || !editorState.slotType) return;
+    const { dayIndex, slotType } = editorState;
     setSchedule(prev => prev.map((day, idx) => {
       if (idx !== dayIndex) return day;
       return {
         ...day,
-        meals: { ...day.meals, [mealType as MealType]: updated },
+        meals: { ...day.meals, [slotType as SlotType]: updated },
       };
     }));
-    void persistDish(dayIndex, mealType as MealType, updated);
+    void persistDish(dayIndex, slotType as SlotType, updated);
   };
 
-  const editingDish = editorState.dayIndex >= 0 && editorState.mealType
-    ? schedule[editorState.dayIndex]?.meals[editorState.mealType as MealType] ?? null
+  const editingDish = editorState.dayIndex >= 0 && editorState.slotType
+    ? schedule[editorState.dayIndex]?.meals[editorState.slotType as SlotType] ?? null
     : null;
 
   const handleSelectDish = (dish: {
@@ -214,8 +238,8 @@ export default function Home() {
     allergens?: number[];
     processingMethod?: Dish["processingMethod"];
   }) => {
-    if (pickerState.dayIndex === -1 || !pickerState.mealType) return;
-    const { dayIndex, mealType } = pickerState;
+    if (pickerState.dayIndex === -1 || !pickerState.slotType) return;
+    const { dayIndex, slotType } = pickerState;
     const newDish: Dish = {
       id: dish.id,
       name: dish.name,
@@ -227,19 +251,19 @@ export default function Home() {
     };
     setSchedule(prev => prev.map((day, idx) => {
       if (idx !== dayIndex) return day;
-      return { ...day, meals: { ...day.meals, [mealType as MealType]: newDish } };
+      return { ...day, meals: { ...day.meals, [slotType as SlotType]: newDish } };
     }));
-    void persistDish(dayIndex, mealType as MealType, newDish);
+    void persistDish(dayIndex, slotType as SlotType, newDish);
   };
 
-  const handleRemoveDish = (dayIndex: number, mealType: MealType) => {
+  const handleRemoveDish = (dayIndex: number, slotType: SlotType) => {
     setSchedule(prev => prev.map((day, idx) => {
       if (idx !== dayIndex) return day;
       const newMeals = { ...day.meals };
-      delete newMeals[mealType];
+      delete newMeals[slotType];
       return { ...day, meals: newMeals };
     }));
-    void deleteDish(dayIndex, mealType);
+    void deleteDish(dayIndex, slotType);
   };
 
   const handleClearWeek = () => {
@@ -277,7 +301,7 @@ export default function Home() {
         setApiError(data.error ?? "Błąd generowania.");
         return;
       }
-      const items = data.items as { date: string; mealType: MealType; dish: Dish }[];
+      const items = data.items as { date: string; slotType: SlotType; dish: Dish }[];
       if (data.compliance) {
         setCompliance(data.compliance as ComplianceResponse);
         setComplianceOpen(true);
@@ -288,8 +312,8 @@ export default function Home() {
           const dayKey = format(day.date, "yyyy-MM-dd");
           const slotMatches = items.filter((x) => x.date === dayKey);
           if (slotMatches.length === 0) return day;
-          const meals: Partial<Record<MealType, Dish>> = { ...day.meals };
-          for (const slot of slotMatches) meals[slot.mealType] = slot.dish;
+          const meals: Partial<Record<SlotType, Dish>> = { ...day.meals };
+          for (const slot of slotMatches) meals[slot.slotType] = slot.dish;
           return { ...day, meals };
         }),
       );
@@ -298,7 +322,7 @@ export default function Home() {
         items.map((it) => {
           const dayIndex = workingDays.findIndex((d) => format(d, "yyyy-MM-dd") === it.date);
           if (dayIndex < 0) return Promise.resolve();
-          return persistDish(dayIndex, it.mealType, it.dish);
+          return persistDish(dayIndex, it.slotType, it.dish);
         }),
       );
       const failed = results.filter((r) => r.status === "rejected").length;
@@ -332,6 +356,10 @@ export default function Home() {
             <Calendar className="mr-3 h-5 w-5" />
             Planer Menu
           </Button>
+          <Link href="/restaurant" className={buttonVariants({ variant: "ghost" }) + " w-full justify-start text-slate-600"}>
+            <Store className="mr-3 h-5 w-5" />
+            Moja restauracja
+          </Link>
           {isAdmin && (
             <>
               <div className="pt-2 pb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
@@ -417,7 +445,7 @@ export default function Home() {
                   </Button>
                 )}
                 <span className="ml-2 text-xs bg-slate-100 rounded-full px-2 py-1 font-medium text-slate-600">
-                  {totalPlanned} / {workingDays.length * MEAL_ORDER.length} posiłków
+                  {totalPlanned} / {workingDays.length * SLOT_ORDER.length} posiłków
                 </span>
               </div>
             </div>
@@ -504,14 +532,14 @@ export default function Home() {
                     </div>
 
                     <div className="space-y-3">
-                      {MEAL_ORDER.map(mealType => {
-                        const dish = day.meals[mealType];
-                        const config = MEAL_CONFIG[mealType];
+                      {SLOT_ORDER.map(slotType => {
+                        const dish = day.meals[slotType];
+                        const config = SLOT_CONFIG[slotType];
 
                         if (dish) {
                           return (
                             <div
-                              key={mealType}
+                              key={slotType}
                               className="p-3 border border-slate-100 bg-slate-50 rounded-lg hover:border-emerald-200 transition-colors group relative"
                             >
                               <div className="flex items-center gap-2 mb-2">
@@ -519,14 +547,14 @@ export default function Home() {
                                 <span className="font-medium text-xs text-slate-600">{config.label}</span>
                                 <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                   <button
-                                    onClick={() => handleOpenEditor(dayIndex, mealType)}
+                                    onClick={() => handleOpenEditor(dayIndex, slotType)}
                                     className="text-slate-400 hover:text-emerald-600"
                                     aria-label="Edytuj danie"
                                   >
                                     <Pencil className="h-3 w-3" />
                                   </button>
                                   <button
-                                    onClick={() => handleRemoveDish(dayIndex, mealType)}
+                                    onClick={() => handleRemoveDish(dayIndex, slotType)}
                                     className="text-slate-400 hover:text-rose-600"
                                     aria-label="Usuń danie"
                                   >
@@ -553,8 +581,8 @@ export default function Home() {
 
                         return (
                           <div
-                            key={mealType}
-                            onClick={() => handleOpenPicker(mealType, dayIndex)}
+                            key={slotType}
+                            onClick={() => handleOpenPicker(slotType, dayIndex)}
                             className="p-3 border border-slate-200 rounded-lg border-dashed text-slate-400 flex items-center justify-center hover:bg-emerald-50/30 hover:border-emerald-300 hover:text-emerald-600 transition-colors cursor-pointer min-h-20"
                           >
                             <div className="text-center">
@@ -606,6 +634,9 @@ export default function Home() {
                 <Button variant="secondary" className="w-full justify-start text-emerald-700 bg-emerald-50">
                   <Calendar className="mr-3 h-5 w-5" /> Planer Menu
                 </Button>
+                <Link href="/restaurant" className={buttonVariants({ variant: "outline" }) + " w-full justify-start"}>
+                  <Store className="mr-3 h-5 w-5" /> Moja restauracja
+                </Link>
                 {isAdmin && (
                   <>
                     <div className="pt-2 pb-1 px-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
@@ -691,6 +722,7 @@ export default function Home() {
             generating={generating}
             validation={validation}
             loading={loading}
+            slotOrder={SLOT_ORDER}
           />
         </main>
       </div>
@@ -699,7 +731,7 @@ export default function Home() {
       <DishPickerModal
         open={pickerState.open}
         onOpenChange={(open) => setPickerState(prev => ({ ...prev, open }))}
-        mealType={pickerState.mealType}
+        mealType={pickerState.slotType ? slotToMealType(pickerState.slotType) : ""}
         dayLabel={pickerState.dayIndex >= 0
           ? format(workingDays[pickerState.dayIndex], 'EEEE, d MMM', { locale: pl })
           : ''}
@@ -736,19 +768,20 @@ function MobileDayView(props: {
   totalPlanned: number;
   apiError: string | null;
   onDismissError: () => void;
-  onOpenPicker: (mealType: MealType, dayIndex: number) => void;
-  onOpenEditor: (dayIndex: number, mealType: MealType) => void;
-  onRemoveDish: (dayIndex: number, mealType: MealType) => void;
+  onOpenPicker: (slotType: SlotType, dayIndex: number) => void;
+  onOpenEditor: (dayIndex: number, slotType: SlotType) => void;
+  onRemoveDish: (dayIndex: number, slotType: SlotType) => void;
   onExportPdf: (variant: "sanepid" | "parents") => void;
   onAI: () => void;
   generating: boolean;
   validation: ValidationResult;
   loading: boolean;
+  slotOrder: SlotType[];
 }) {
   const {
     day, dayIndex, isCurrentWeek, onGoToToday, weekRangeLabel, totalPlanned,
     apiError, onDismissError, onOpenPicker, onOpenEditor, onRemoveDish,
-    onExportPdf, onAI, generating, validation, loading,
+    onExportPdf, onAI, generating, validation, loading, slotOrder: SLOT_ORDER,
   } = props;
   const [actionsOpen, setActionsOpen] = useState(false);
 
@@ -831,7 +864,7 @@ function MobileDayView(props: {
 
         <div className="flex items-center gap-2 mt-3">
           <span className="text-xs bg-slate-100 rounded-full px-2.5 py-1 font-medium text-slate-600">
-            {plannedToday}/{MEAL_ORDER.length} posiłków
+            {plannedToday}/{SLOT_ORDER.length} posiłków
           </span>
           {dayIssues.length > 0 && (
             <span className="text-xs bg-amber-100 text-amber-800 rounded-full px-2.5 py-1 font-medium">
@@ -857,16 +890,16 @@ function MobileDayView(props: {
 
       {/* Kolorowe karty posiłków */}
       <div className="px-5 pb-6 space-y-3">
-        {MEAL_ORDER.map((mealType) => {
-          const dish = day.meals[mealType];
-          const config = MEAL_CONFIG[mealType];
-          const color = MEAL_COLOR[mealType];
+        {SLOT_ORDER.map((slotType) => {
+          const dish = day.meals[slotType];
+          const config = SLOT_CONFIG[slotType];
+          const color = SLOT_COLOR[slotType];
 
           if (!dish) {
             return (
               <button
-                key={mealType}
-                onClick={() => onOpenPicker(mealType, dayIndex)}
+                key={slotType}
+                onClick={() => onOpenPicker(slotType, dayIndex)}
                 className="w-full rounded-2xl border-2 border-dashed border-slate-200 bg-white/40 hover:bg-white hover:border-slate-300 transition-colors p-4 flex items-center gap-3 text-left"
               >
                 <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center text-lg">
@@ -885,7 +918,7 @@ function MobileDayView(props: {
 
           return (
             <div
-              key={mealType}
+              key={slotType}
               className={`rounded-2xl shadow-lg shadow-slate-200/50 p-4 ${color.card}`}
             >
               <div className="flex items-start justify-between gap-2">
@@ -897,14 +930,14 @@ function MobileDayView(props: {
                 </div>
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={() => onOpenEditor(dayIndex, mealType)}
+                    onClick={() => onOpenEditor(dayIndex, slotType)}
                     className="h-7 w-7 rounded-lg bg-black/10 hover:bg-black/20 flex items-center justify-center transition-colors"
                     aria-label="Edytuj danie"
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
                   <button
-                    onClick={() => onRemoveDish(dayIndex, mealType)}
+                    onClick={() => onRemoveDish(dayIndex, slotType)}
                     className="h-7 w-7 rounded-lg bg-black/10 hover:bg-black/20 flex items-center justify-center transition-colors"
                     aria-label="Usuń danie"
                   >
@@ -952,7 +985,7 @@ function MobileDayView(props: {
           </div>
         )}
 
-        {plannedToday === MEAL_ORDER.length && dayIssues.length === 0 && (
+        {plannedToday === SLOT_ORDER.length && dayIssues.length === 0 && (
           <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-600" />
             <p className="text-xs font-semibold text-emerald-800">Dzień zaplanowany zgodnie z Sanepid</p>

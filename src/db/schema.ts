@@ -10,6 +10,7 @@ export const appSettings = pgTable("app_settings", {
 });
 
 export const mealTypeEnum = pgEnum("menu_meal_type", ["sniadanie_kolacja", "drugie_sniadanie_deser", "obiad_zupa", "obiad_danie_glowne"]);
+export const slotTypeEnum = pgEnum("menu_slot_type", ["sniadanie", "drugie_sniadanie", "obiad_zupa", "obiad_danie_glowne", "podwieczorek", "kolacja"]);
 export const dietTypeEnum = pgEnum("diet_type", ["meat", "vegetarian", "fish", "legumes"]);
 export const processingMethodEnum = pgEnum("processing_method", ["gotowanie", "duszenie", "pieczenie", "smazenie", "surowe"]);
 
@@ -24,7 +25,9 @@ export const profiles = pgTable("profiles", {
   minLegumesDishes: integer("min_legumes_dishes").default(0),
   workingDays: integer("working_days").array().default([1,2,3,4,5]), // Mon-Fri
   useGlobalDishes: boolean("use_global_dishes").default(true),
-  logoUrl: text("logo_url")
+  logoUrl: text("logo_url"),
+  restaurantName: text("restaurant_name"),
+  servedSlots: slotTypeEnum("served_slots").array().default(["sniadanie", "drugie_sniadanie", "obiad_zupa", "obiad_danie_glowne", "podwieczorek", "kolacja"]),
 });
 
 export const userRoles = pgTable("user_roles", {
@@ -37,7 +40,7 @@ export const userRoles = pgTable("user_roles", {
 // ===== ALLERGENS (Global public readable) =====
 export const allergens = pgTable("allergens", {
   id: uuid("id").primaryKey().defaultRandom(),
-  number: integer("number").notNull(),
+  number: integer("number").notNull().unique(),
   name: text("name").notNull(),
   description: text("description")
 });
@@ -99,7 +102,8 @@ export const menuItems = pgTable("menu_items", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull(),
   date: timestamp("date", { mode: 'string' }).notNull(), // string allows YYYY-MM-DD
-  mealType: mealTypeEnum("meal_type").notNull(),
+  mealType: mealTypeEnum("meal_type").notNull(), // pool dania (4-wartościowy)
+  slotType: slotTypeEnum("slot_type").notNull().default("obiad_danie_glowne"), // sloty kalendarza (6-wartościowy)
   dietType: dietTypeEnum("diet_type"),
   displayName: text("display_name").notNull(),
   sourceDishId: uuid("source_dish_id"), // if derived from library

@@ -1,7 +1,42 @@
 import { format } from "date-fns";
 
 export type MealType = "sniadanie_kolacja" | "drugie_sniadanie_deser" | "obiad_zupa" | "obiad_danie_glowne";
+export type SlotType = "sniadanie" | "drugie_sniadanie" | "obiad_zupa" | "obiad_danie_glowne" | "podwieczorek" | "kolacja";
 export type DietType = "meat" | "vegetarian" | "fish" | "legumes" | null;
+
+export const ALL_SLOTS: SlotType[] = ["sniadanie", "drugie_sniadanie", "obiad_zupa", "obiad_danie_glowne", "podwieczorek", "kolacja"];
+
+export const SLOT_LABELS: Record<SlotType, string> = {
+  sniadanie: "Śniadanie",
+  drugie_sniadanie: "II Śniadanie",
+  obiad_zupa: "Obiad — Zupa",
+  obiad_danie_glowne: "Obiad — Danie główne",
+  podwieczorek: "Podwieczorek",
+  kolacja: "Kolacja",
+};
+
+export const MEAL_LABELS: Record<MealType, string> = {
+  sniadanie_kolacja: "Śniadanie / Kolacja",
+  drugie_sniadanie_deser: "II Śniadanie / Deser",
+  obiad_zupa: "Obiad — Zupa",
+  obiad_danie_glowne: "Obiad — Danie główne",
+};
+
+// Mapowanie: slot kalendarza → pula dań (mealType w bibliotece)
+export function slotToMealType(slot: SlotType): MealType {
+  switch (slot) {
+    case "sniadanie":
+    case "kolacja":
+      return "sniadanie_kolacja";
+    case "drugie_sniadanie":
+    case "podwieczorek":
+      return "drugie_sniadanie_deser";
+    case "obiad_zupa":
+      return "obiad_zupa";
+    case "obiad_danie_glowne":
+      return "obiad_danie_glowne";
+  }
+}
 export type ProcessingMethod = "gotowanie" | "duszenie" | "pieczenie" | "smazenie" | "surowe";
 
 export interface RawIngredient {
@@ -41,7 +76,7 @@ export interface Dish {
 
 export interface DaySchedule {
   date: Date;
-  meals: Partial<Record<MealType, Dish>>;
+  meals: Partial<Record<SlotType, Dish>>;
 }
 
 export interface WeeklyValidation {
