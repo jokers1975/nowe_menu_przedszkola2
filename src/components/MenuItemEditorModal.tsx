@@ -1,12 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { X } from "lucide-react";
+import { X, Plus, Trash2 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { EU_ALLERGENS } from "@/lib/allergens";
-import type { Dish, DietType, MealType } from "@/lib/sanepid-brain";
+import type { Dish, DietType, DishIngredient, MealType } from "@/lib/sanepid-brain";
 
 const MEAL_LABELS: Record<MealType, string> = {
   sniadanie_kolacja: "Śniadanie / Kolacja",
@@ -35,6 +35,9 @@ export function MenuItemEditorModal({ open, onOpenChange, dish, onSave }: MenuIt
   const [dietType, setDietType] = React.useState<DietType>(null);
   const [hasVegFruit, setHasVegFruit] = React.useState(false);
   const [allergenNumbers, setAllergenNumbers] = React.useState<number[]>([]);
+  const [ingredients, setIngredients] = React.useState<DishIngredient[]>([]);
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (!open || !dish) return;
@@ -43,6 +46,8 @@ export function MenuItemEditorModal({ open, onOpenChange, dish, onSave }: MenuIt
     setDietType(dish.diet);
     setHasVegFruit(dish.vegFruit);
     setAllergenNumbers([...dish.allergens].sort((a, b) => a - b));
+    setIngredients(dish.ingredients ? dish.ingredients.map((i) => ({ ...i })) : []);
+    setError(null);
   }, [open, dish]);
 
   if (!open || !dish) return null;
@@ -53,7 +58,48 @@ export function MenuItemEditorModal({ open, onOpenChange, dish, onSave }: MenuIt
     );
   };
 
-  const handleSave = () => {
+  const addIngredient = () => setIngredients((p) => [...p, { name: "", quantity: null, unit: "g" }]);
+  const updateIngredient = (idx: number, patch: Partial<DishIngredient>) =>
+    setIngredients((p) => p.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+  const removeIngredient = (idx: number) => setIngredients((p) => p.filter((_, i) => i !== idx));
+
+  const handleSave = async () => {
+    setError(null);
+    const cleanIngredients = ingredients
+      .map((i) => ({ name: i.name.trim(), quantity: i.quantity, unit: (i.unit || "g").trim() }))
+      .filter((i) => i.name.length > 0);
+
+    // Zapisz zmiany dania (nazwa, typ, dieta, vegFruit, alergeny, składniki) do bazy
+    // poprzez PUT /api/dishes — wpływa na WSZYSTKIE dni używające tego dania.
+    if (typeof dish.id === "string") {
+      setSaving(true);
+      try {
+        const allergenIds = await fetchAllergenIdsByNumber(allergenNumbers);
+        const res = await fetch("/api/dishes", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: dish.id,
+            displayName: name.trim() || dish.name,
+            mealType,
+            dietType,
+            hasVegFruit,
+            allergenIds,
+            ingredients: cleanIngredients,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error ?? "Zapis dania nieudany");
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        setSaving(false);
+        return;
+      }
+      setSaving(false);
+    }
+
     onSave({
       ...dish,
       name: name.trim() || dish.name,
@@ -61,6 +107,7 @@ export function MenuItemEditorModal({ open, onOpenChange, dish, onSave }: MenuIt
       diet: dietType,
       vegFruit: hasVegFruit,
       allergens: [...allergenNumbers].sort((a, b) => a - b),
+      ingredients: cleanIngredients,
       preparedProducts: undefined,
     });
     onOpenChange(false);
@@ -135,12 +182,75 @@ export function MenuItemEditorModal({ open, onOpenChange, dish, onSave }: MenuIt
               ))}
             </div>
           </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-medium text-slate-600">Składniki (wydruk Sanepid)</label>
+              <Button type="button" variant="outline" size="sm" onClick={addIngredient} className="h-7 text-xs">
+                <Plus className="h-3 w-3 mr-1" /> Dodaj składnik
+              </Button>
+            </div>
+            {ingredients.length === 0 ? (
+              <p className="text-xs text-slate-400 italic">Brak składników. Nie pojawiają się na kalendarzu ani wydruku dla rodziców.</p>
+            ) : (
+              <div className="space-y-1 max-h-56 overflow-auto border border-slate-200 rounded-md p-2">
+                {ingredients.map((ing, idx) => (
+                  <div key={idx} className="flex items-center gap-1">
+                    <Input
+                      value={ing.name}
+                      onChange={(e) => updateIngredient(idx, { name: e.target.value })}
+                      placeholder="Nazwa składnika"
+                      className="flex-1 h-8 text-sm"
+                    />
+                    <Input
+                      type="number"
+                      min={0}
+                      value={ing.quantity ?? ""}
+                      onChange={(e) => updateIngredient(idx, { quantity: e.target.value === "" ? null : Number(e.target.value) })}
+                      placeholder="ilość"
+                      className="w-20 h-8 text-sm"
+                    />
+                    <select
+                      value={ing.unit}
+                      onChange={(e) => updateIngredient(idx, { unit: e.target.value })}
+                      className="h-8 px-2 border border-slate-300 rounded-md bg-white text-sm"
+                    >
+                      <option value="g">g</option>
+                      <option value="ml">ml</option>
+                      <option value="szt">szt</option>
+                      <option value="łyż">łyż</option>
+                    </select>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => removeIngredient(idx)} className="h-8 w-8" aria-label="Usuń">
+                      <Trash2 className="h-3 w-3 text-rose-600" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-md px-2 py-1">{error}</p>
+          )}
         </div>
         <div className="flex items-center justify-end gap-2 p-4 border-t border-slate-100 bg-slate-50 rounded-b-xl">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Anuluj</Button>
-          <Button onClick={handleSave} className="bg-emerald-600 hover:bg-emerald-700">Zapisz</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>Anuluj</Button>
+          <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700">
+            {saving ? "Zapisywanie…" : "Zapisz"}
+          </Button>
         </div>
       </div>
     </div>
   );
+}
+
+// Pomocnik: konwersja numerów EU alergenow na UUIDy z /api/allergens (wymagane przez POST/PUT /api/dishes).
+async function fetchAllergenIdsByNumber(numbers: number[]): Promise<string[]> {
+  if (numbers.length === 0) return [];
+  const res = await fetch("/api/allergens");
+  if (!res.ok) return [];
+  const data = (await res.json()) as { allergens?: Array<{ id: string; number: number }> };
+  const list = data.allergens ?? [];
+  const map = new Map<number, string>(list.map((a) => [a.number, a.id]));
+  return numbers.map((n) => map.get(n)).filter((x): x is string => typeof x === "string");
 }

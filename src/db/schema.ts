@@ -68,6 +68,16 @@ export const dishIngredients = pgTable("dish_ingredients", {
   ingredientName: text("ingredient_name").notNull(),
   quantity: integer("quantity"),
   unit: text("unit").default("g").notNull(),
+  positionOrder: integer("position_order").default(0).notNull(),
+});
+
+export const globalDishIngredients = pgTable("global_dish_ingredients", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  globalDishId: uuid("global_dish_id").notNull().references(() => globalDishes.id, { onDelete: "cascade" }),
+  ingredientName: text("ingredient_name").notNull(),
+  quantity: integer("quantity"),
+  unit: text("unit").default("g").notNull(),
+  positionOrder: integer("position_order").default(0).notNull(),
 });
 
 export const dishAllergens = pgTable("dish_allergens", {

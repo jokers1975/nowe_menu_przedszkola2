@@ -3,9 +3,12 @@ import {
   allergens,
   dishAllergens,
   dishes as userDishes,
+  dishIngredients,
   globalDishAllergens,
   globalDishes,
+  globalDishIngredients,
 } from "@/db/schema";
+import { asc } from "drizzle-orm";
 import { and, eq, inArray } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import {
@@ -143,8 +146,58 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Pobieramy składniki w osobnych zapytaniach (uniknięcie cartesian product z allergen-join)
+    const dishIds = [...dishMap.keys()];
+    const ingredientsByDish = new Map<string, Array<{ name: string; quantity: number | null; unit: string; position: number }>>();
+
+    if (dishIds.length > 0) {
+      const globalIng = await db
+        .select({
+          dishId: globalDishIngredients.globalDishId,
+          name: globalDishIngredients.ingredientName,
+          quantity: globalDishIngredients.quantity,
+          unit: globalDishIngredients.unit,
+          position: globalDishIngredients.positionOrder,
+        })
+        .from(globalDishIngredients)
+        .where(inArray(globalDishIngredients.globalDishId, dishIds))
+        .orderBy(asc(globalDishIngredients.positionOrder));
+
+      for (const r of globalIng) {
+        const arr = ingredientsByDish.get(r.dishId) ?? [];
+        arr.push({ name: r.name, quantity: r.quantity, unit: r.unit, position: r.position });
+        ingredientsByDish.set(r.dishId, arr);
+      }
+
+      if (currentUserId) {
+        const userIng = await db
+          .select({
+            dishId: dishIngredients.dishId,
+            name: dishIngredients.ingredientName,
+            quantity: dishIngredients.quantity,
+            unit: dishIngredients.unit,
+            position: dishIngredients.positionOrder,
+          })
+          .from(dishIngredients)
+          .where(inArray(dishIngredients.dishId, dishIds))
+          .orderBy(asc(dishIngredients.positionOrder));
+
+        for (const r of userIng) {
+          const arr = ingredientsByDish.get(r.dishId) ?? [];
+          arr.push({ name: r.name, quantity: r.quantity, unit: r.unit, position: r.position });
+          ingredientsByDish.set(r.dishId, arr);
+        }
+      }
+    }
+
     const dishes = [...dishMap.values()]
-      .map((d) => ({ ...d, allergens: d.allergens.sort((a, b) => a - b) }))
+      .map((d) => ({
+        ...d,
+        allergens: d.allergens.sort((a, b) => a - b),
+        ingredients: (ingredientsByDish.get(d.id) ?? [])
+          .sort((a, b) => a.position - b.position)
+          .map(({ name, quantity, unit }) => ({ name, quantity, unit })),
+      }))
       .sort((a, b) => a.name.localeCompare(b.name, "pl"));
 
     return Response.json({ dishes });
@@ -155,6 +208,12 @@ export async function GET(request: NextRequest) {
   }
 }
 
+type IngredientInput = {
+  name?: string;
+  quantity?: number | null;
+  unit?: string;
+};
+
 type UpsertBody = {
   id?: string;
   displayName?: string;
@@ -162,9 +221,10 @@ type UpsertBody = {
   dietType?: string | null;
   hasVegFruit?: boolean;
   allergenIds?: string[];
+  ingredients?: IngredientInput[];
 };
 
-async function upsertDish(body: UpsertBody, existingId: string | null) {
+async function upsertDish(body: UpsertBody, existingId: string | null, actingUserId: string) {
   const name = body.displayName?.trim();
   if (!name) throw new Error("Nazwa wymagana");
   if (!isMealType(body.mealType)) throw new Error("mealType nieprawidłowy");
@@ -177,10 +237,38 @@ async function upsertDish(body: UpsertBody, existingId: string | null) {
 
   const vegFruit = Boolean(body.hasVegFruit);
   const allergenIds = Array.isArray(body.allergenIds) ? body.allergenIds.filter((x) => typeof x === "string") : [];
+  const ingredients = Array.isArray(body.ingredients)
+    ? body.ingredients
+        .map((i) => ({
+          name: typeof i.name === "string" ? i.name.trim() : "",
+          quantity: typeof i.quantity === "number" && Number.isFinite(i.quantity) ? Math.round(i.quantity) : null,
+          unit: typeof i.unit === "string" && i.unit.trim() ? i.unit.trim() : "g",
+        }))
+        .filter((i) => i.name.length > 0)
+    : [];
+
+  // Sprawdź czy existingId to user-dish (właściciel = acting user) czy global.
+  let target: "global" | "user" = "global";
+  if (existingId) {
+    const [userRow] = await db
+      .select({ id: userDishes.id, userId: userDishes.userId })
+      .from(userDishes)
+      .where(eq(userDishes.id, existingId));
+    if (userRow) {
+      if (userRow.userId !== actingUserId) throw new Error("Brak uprawnień do edycji tego dania");
+      target = "user";
+    }
+  }
 
   return await db.transaction(async (tx) => {
     let dishId = existingId;
-    if (dishId) {
+    if (target === "user") {
+      await tx
+        .update(userDishes)
+        .set({ displayName: name, mealType: body.mealType as MealType, dietType: diet, hasVegFruit: vegFruit })
+        .where(eq(userDishes.id, dishId!));
+      await tx.delete(dishAllergens).where(eq(dishAllergens.dishId, dishId!));
+    } else if (dishId) {
       await tx
         .update(globalDishes)
         .set({ displayName: name, mealType: body.mealType as MealType, dietType: diet, hasVegFruit: vegFruit })
@@ -200,8 +288,43 @@ async function upsertDish(body: UpsertBody, existingId: string | null) {
         .from(allergens)
         .where(inArray(allergens.id, allergenIds));
       if (valid.length > 0) {
-        await tx.insert(globalDishAllergens).values(
-          valid.map((a) => ({ globalDishId: dishId!, allergenId: a.id })),
+        if (target === "user") {
+          await tx.insert(dishAllergens).values(
+            valid.map((a) => ({ dishId: dishId!, allergenId: a.id })),
+          );
+        } else {
+          await tx.insert(globalDishAllergens).values(
+            valid.map((a) => ({ globalDishId: dishId!, allergenId: a.id })),
+          );
+        }
+      }
+    }
+
+    // Składniki: replace-all strategia (usuń i wstaw na nowo w kolejności z tablicy)
+    if (target === "user") {
+      await tx.delete(dishIngredients).where(eq(dishIngredients.dishId, dishId!));
+      if (ingredients.length > 0) {
+        await tx.insert(dishIngredients).values(
+          ingredients.map((ing, idx) => ({
+            dishId: dishId!,
+            ingredientName: ing.name,
+            quantity: ing.quantity,
+            unit: ing.unit,
+            positionOrder: idx,
+          })),
+        );
+      }
+    } else {
+      await tx.delete(globalDishIngredients).where(eq(globalDishIngredients.globalDishId, dishId!));
+      if (ingredients.length > 0) {
+        await tx.insert(globalDishIngredients).values(
+          ingredients.map((ing, idx) => ({
+            globalDishId: dishId!,
+            ingredientName: ing.name,
+            quantity: ing.quantity,
+            unit: ing.unit,
+            positionOrder: idx,
+          })),
         );
       }
     }
@@ -213,8 +336,10 @@ export async function POST(request: NextRequest) {
   const guard = await ensureAdminOrForbidden();
   if (guard) return guard;
   try {
+    const user = await getCurrentUser();
+    if (!user) return unauthorizedResponse();
     const body = (await request.json()) as UpsertBody;
-    const id = await upsertDish(body, null);
+    const id = await upsertDish(body, null, user.id);
     return Response.json({ ok: true, id });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -223,14 +348,23 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const guard = await ensureAdminOrForbidden();
-  if (guard) return guard;
   try {
+    const user = await getCurrentUser();
+    if (!user) return unauthorizedResponse();
     const body = (await request.json()) as UpsertBody;
     if (!body.id || typeof body.id !== "string") {
       return Response.json({ error: "id wymagane" }, { status: 400 });
     }
-    const id = await upsertDish(body, body.id);
+    // Global dish → wymagany admin. User-dish → wystarczy że zalogowany (własność sprawdzana w upsertDish).
+    const [userRow] = await db
+      .select({ id: userDishes.id })
+      .from(userDishes)
+      .where(eq(userDishes.id, body.id));
+    if (!userRow) {
+      const admin = await checkAdmin();
+      if (!admin) return forbiddenResponse();
+    }
+    const id = await upsertDish(body, body.id, user.id);
     return Response.json({ ok: true, id });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

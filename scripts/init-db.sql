@@ -67,7 +67,20 @@ CREATE TABLE IF NOT EXISTS "dish_ingredients" (
   "dish_id" uuid NOT NULL,
   "ingredient_name" text NOT NULL,
   "quantity" integer,
-  "unit" text DEFAULT 'g' NOT NULL
+  "unit" text DEFAULT 'g' NOT NULL,
+  "position_order" integer DEFAULT 0 NOT NULL
+);
+
+-- Migracja: dodaj position_order gdyby tabela juz istniala bez niej
+ALTER TABLE "dish_ingredients" ADD COLUMN IF NOT EXISTS "position_order" integer DEFAULT 0 NOT NULL;
+
+CREATE TABLE IF NOT EXISTS "global_dish_ingredients" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "global_dish_id" uuid NOT NULL,
+  "ingredient_name" text NOT NULL,
+  "quantity" integer,
+  "unit" text DEFAULT 'g' NOT NULL,
+  "position_order" integer DEFAULT 0 NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS "menu_items" (
@@ -143,6 +156,10 @@ EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 DO $$ BEGIN
   ALTER TABLE "dish_ingredients" ADD CONSTRAINT "dish_ingredients_dish_id_fk" FOREIGN KEY ("dish_id") REFERENCES "public"."dishes"("id") ON DELETE cascade;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "global_dish_ingredients" ADD CONSTRAINT "global_dish_ingredients_global_dish_id_fk" FOREIGN KEY ("global_dish_id") REFERENCES "public"."global_dishes"("id") ON DELETE cascade;
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 DO $$ BEGIN

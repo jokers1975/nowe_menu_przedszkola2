@@ -4,17 +4,21 @@ import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import {
   allergens,
+  dishIngredients,
   globalDishAllergens,
+  globalDishIngredients,
   ingredientAllergens,
   menuItems,
   preparedProducts,
   profiles,
   rawIngredients,
 } from "@/db/schema";
+import { asc } from "drizzle-orm";
 import { UnauthorizedError, getCurrentUserId, unauthorizedResponse } from "@/lib/auth";
 import { MenuPdf, type MenuSlot, type Variant } from "@/lib/pdf/menu-pdf";
 import type {
   Dish,
+  DishIngredient,
   MealType,
   PreparedProduct,
   RawIngredient,
@@ -115,6 +119,43 @@ export async function GET(req: NextRequest) {
       globalAllergensByDishId.set(row.globalDishId, arr);
     }
 
+    // Składniki z global_dish_ingredients + dish_ingredients (flat lista na wydruku Sanepid)
+    const ingredientsByDishId = new Map<string, DishIngredient[]>();
+    if (sourceDishIds.length) {
+      const globalIngs = await db
+        .select({
+          dishId: globalDishIngredients.globalDishId,
+          name: globalDishIngredients.ingredientName,
+          quantity: globalDishIngredients.quantity,
+          unit: globalDishIngredients.unit,
+          position: globalDishIngredients.positionOrder,
+        })
+        .from(globalDishIngredients)
+        .where(inArray(globalDishIngredients.globalDishId, sourceDishIds))
+        .orderBy(asc(globalDishIngredients.positionOrder));
+      for (const r of globalIngs) {
+        const arr = ingredientsByDishId.get(r.dishId) ?? [];
+        arr.push({ name: r.name, quantity: r.quantity, unit: r.unit });
+        ingredientsByDishId.set(r.dishId, arr);
+      }
+      const userIngs = await db
+        .select({
+          dishId: dishIngredients.dishId,
+          name: dishIngredients.ingredientName,
+          quantity: dishIngredients.quantity,
+          unit: dishIngredients.unit,
+          position: dishIngredients.positionOrder,
+        })
+        .from(dishIngredients)
+        .where(inArray(dishIngredients.dishId, sourceDishIds))
+        .orderBy(asc(dishIngredients.positionOrder));
+      for (const r of userIngs) {
+        const arr = ingredientsByDishId.get(r.dishId) ?? [];
+        arr.push({ name: r.name, quantity: r.quantity, unit: r.unit });
+        ingredientsByDishId.set(r.dishId, arr);
+      }
+    }
+
     const slots: MenuSlot[] = items.map((m) => {
       const pps = productsByMenuItemId.get(m.id) ?? [];
       const allergenSet = new Set<number>();
@@ -133,6 +174,7 @@ export async function GET(req: NextRequest) {
         diet: m.dietType,
         vegFruit,
         allergens: [...allergenSet].sort((a, b) => a - b),
+        ingredients: m.sourceDishId ? (ingredientsByDishId.get(m.sourceDishId) ?? []) : [],
         preparedProducts: pps,
       };
       const dateKey = typeof m.date === "string" ? m.date.slice(0, 10) : String(m.date).slice(0, 10);

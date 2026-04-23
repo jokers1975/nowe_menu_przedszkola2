@@ -24,6 +24,12 @@ const DIET_LABELS: Record<Exclude<DietType, null>, string> = {
   legumes: "Strączki",
 };
 
+interface Ingredient {
+  name: string;
+  quantity: number | null;
+  unit: string;
+}
+
 interface Dish {
   id: string;
   name: string;
@@ -32,6 +38,7 @@ interface Dish {
   vegFruit: boolean;
   allergens: number[];
   allergenIds: string[];
+  ingredients?: Ingredient[];
 }
 
 interface Allergen {
@@ -48,6 +55,7 @@ interface Form {
   dietType: DietType;
   hasVegFruit: boolean;
   allergenIds: string[];
+  ingredients: Ingredient[];
 }
 
 const EMPTY_FORM: Form = {
@@ -57,6 +65,7 @@ const EMPTY_FORM: Form = {
   dietType: "meat",
   hasVegFruit: false,
   allergenIds: [],
+  ingredients: [],
 };
 
 export default function AdminDishesPage() {
@@ -103,6 +112,7 @@ export default function AdminDishesPage() {
       dietType: d.diet,
       hasVegFruit: d.vegFruit,
       allergenIds: d.allergenIds,
+      ingredients: d.ingredients ? d.ingredients.map((i) => ({ ...i })) : [],
     });
     setStatus(null);
   };
@@ -125,6 +135,9 @@ export default function AdminDishesPage() {
           dietType: form.dietType,
           hasVegFruit: form.hasVegFruit,
           allergenIds: form.allergenIds,
+          ingredients: form.ingredients
+            .map((i) => ({ name: i.name.trim(), quantity: i.quantity, unit: (i.unit || "g").trim() }))
+            .filter((i) => i.name.length > 0),
         }),
       });
       const data = await res.json();
@@ -165,6 +178,23 @@ export default function AdminDishesPage() {
       const has = f.allergenIds.includes(id);
       return { ...f, allergenIds: has ? f.allergenIds.filter((x) => x !== id) : [...f.allergenIds, id] };
     });
+  };
+
+  const addIngredient = () => {
+    setForm((f) => (f ? { ...f, ingredients: [...f.ingredients, { name: "", quantity: null, unit: "g" }] } : f));
+  };
+
+  const updateIngredient = (idx: number, patch: Partial<Ingredient>) => {
+    setForm((f) => {
+      if (!f) return f;
+      const next = [...f.ingredients];
+      next[idx] = { ...next[idx], ...patch };
+      return { ...f, ingredients: next };
+    });
+  };
+
+  const removeIngredient = (idx: number) => {
+    setForm((f) => (f ? { ...f, ingredients: f.ingredients.filter((_, i) => i !== idx) } : f));
   };
 
   return (
@@ -312,6 +342,52 @@ export default function AdminDishesPage() {
                     </label>
                   ))}
                 </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-medium text-slate-600">Składniki (wydruk Sanepid)</label>
+                  <Button type="button" variant="outline" size="sm" onClick={addIngredient} className="h-7 text-xs">
+                    <Plus className="h-3 w-3 mr-1" /> Dodaj składnik
+                  </Button>
+                </div>
+                {form.ingredients.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">Brak składników. Nie pojawiają się na kalendarzu ani wydruku dla rodziców.</p>
+                ) : (
+                  <div className="space-y-1 max-h-56 overflow-auto border border-slate-200 rounded-md p-2">
+                    {form.ingredients.map((ing, idx) => (
+                      <div key={idx} className="flex items-center gap-1">
+                        <Input
+                          value={ing.name}
+                          onChange={(e) => updateIngredient(idx, { name: e.target.value })}
+                          placeholder="Nazwa składnika"
+                          className="flex-1 h-8 text-sm"
+                        />
+                        <Input
+                          type="number"
+                          min={0}
+                          value={ing.quantity ?? ""}
+                          onChange={(e) => updateIngredient(idx, { quantity: e.target.value === "" ? null : Number(e.target.value) })}
+                          placeholder="ilość"
+                          className="w-20 h-8 text-sm"
+                        />
+                        <select
+                          value={ing.unit}
+                          onChange={(e) => updateIngredient(idx, { unit: e.target.value })}
+                          className="h-8 px-2 border border-slate-300 rounded-md bg-white text-sm"
+                        >
+                          <option value="g">g</option>
+                          <option value="ml">ml</option>
+                          <option value="szt">szt</option>
+                          <option value="łyż">łyż</option>
+                        </select>
+                        <Button type="button" variant="ghost" size="icon" onClick={() => removeIngredient(idx)} className="h-8 w-8" aria-label="Usuń">
+                          <Trash2 className="h-3 w-3 text-rose-600" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex items-center justify-end gap-2 p-4 border-t border-slate-100 bg-slate-50 rounded-b-xl">

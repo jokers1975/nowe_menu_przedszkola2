@@ -21,6 +21,12 @@ export interface PreparedProduct {
   rawIngredients: RawIngredient[];
 }
 
+export interface DishIngredient {
+  name: string;
+  quantity: number | null;
+  unit: string;
+}
+
 export interface Dish {
   id: string | number;
   name: string;
@@ -28,6 +34,7 @@ export interface Dish {
   diet: DietType;
   vegFruit: boolean;
   allergens: number[];
+  ingredients?: DishIngredient[];
   processingMethod?: ProcessingMethod;
   preparedProducts?: PreparedProduct[];
 }

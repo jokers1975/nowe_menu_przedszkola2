@@ -7,8 +7,10 @@ import {
   allergens,
   dishes,
   dishAllergens,
+  dishIngredients,
   globalDishes,
   globalDishAllergens,
+  globalDishIngredients,
 } from "../src/db/schema";
 
 type AllergenRow = { id: string; code: string; name: string };
@@ -196,6 +198,72 @@ async function seed() {
     console.log(`  inserted ${inserted} links, skipped ${skipped}`);
   } else {
     console.log("  dish_allergens.csv not found, skipping");
+  }
+
+  // ----------------------------------------------------------------------
+  // Global dish ingredients
+  // ----------------------------------------------------------------------
+  console.log("→ Seeding global_dish_ingredients…");
+  const globalIngPath = path.join(baseDir, "global_dish_ingredients.csv");
+  if (fs.existsSync(globalIngPath)) {
+    const csv = fs.readFileSync(globalIngPath, "utf-8");
+    const rows: Array<{
+      id: string; global_dish_id: string; ingredient_name: string;
+      quantity: string; unit: string; position_order: string;
+    }> = parse(csv, { columns: true, skip_empty_lines: true });
+
+    let inserted = 0, skipped = 0;
+    for (const r of rows) {
+      if (!insertedGlobalIds.has(r.global_dish_id)) { skipped++; continue; }
+      await db
+        .insert(globalDishIngredients)
+        .values({
+          id: r.id,
+          globalDishId: r.global_dish_id,
+          ingredientName: r.ingredient_name,
+          quantity: r.quantity ? parseInt(r.quantity, 10) : null,
+          unit: r.unit || "g",
+          positionOrder: r.position_order ? parseInt(r.position_order, 10) : 0,
+        })
+        .onConflictDoNothing();
+      inserted++;
+    }
+    console.log(`  inserted ${inserted}, skipped ${skipped} orphans`);
+  } else {
+    console.log("  global_dish_ingredients.csv not found, skipping");
+  }
+
+  // ----------------------------------------------------------------------
+  // Dish ingredients (user)
+  // ----------------------------------------------------------------------
+  console.log("→ Seeding dish_ingredients…");
+  const dishIngPath = path.join(baseDir, "dish_ingredients.csv");
+  if (fs.existsSync(dishIngPath)) {
+    const csv = fs.readFileSync(dishIngPath, "utf-8");
+    const rows: Array<{
+      id: string; dish_id: string; ingredient_name: string;
+      quantity: string; unit: string; position_order: string;
+    }> = parse(csv, { columns: true, skip_empty_lines: true });
+
+    let inserted = 0, skipped = 0;
+    for (const r of rows) {
+      if (!insertedDishIds.has(r.dish_id)) { skipped++; continue; }
+      await db
+        .insert(dishIngredients)
+        .values({
+          id: r.id,
+          dishId: r.dish_id,
+          ingredientName: r.ingredient_name,
+          quantity: r.quantity ? parseInt(r.quantity, 10) : null,
+          unit: r.unit || "g",
+          positionOrder: r.position_order ? parseInt(r.position_order, 10) : 0,
+        })
+        .onConflictDoNothing();
+      inserted++;
+    }
+    console.log(`  inserted ${inserted}, skipped ${skipped} orphans`);
+  } else {
+    console.log("  dish_ingredients.csv not found, skipping");
   }
 
   console.log("✓ Seed complete.");

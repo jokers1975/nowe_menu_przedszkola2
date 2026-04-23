@@ -317,6 +317,7 @@ function AllergenPills({ codes }: { codes: number[] }) {
 function DishCellSanepid({ dish }: { dish: Dish }) {
   const pps = dish.preparedProducts ?? [];
   const codes = dishAllergens(dish);
+  const flatIngredients = dish.ingredients ?? [];
   return (
     <View>
       <Text style={styles.dishName}>{dish.name}</Text>
@@ -335,6 +336,16 @@ function DishCellSanepid({ dish }: { dish: Dish }) {
           ))}
         </View>
       ))}
+      {pps.length === 0 && flatIngredients.length > 0 && (
+        <View>
+          {flatIngredients.map((i, idx) => (
+            <Text key={idx} style={styles.ingLine}>
+              – {i.name}
+              {i.quantity !== null && i.quantity !== undefined ? ` ${i.quantity}${i.unit ?? "g"}` : ""}
+            </Text>
+          ))}
+        </View>
+      )}
       <AllergenPills codes={codes} />
     </View>
   );
