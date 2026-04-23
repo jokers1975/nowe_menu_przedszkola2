@@ -54,11 +54,22 @@ npm run seed
 
 Potrzebny plik `download/database_export.zip` z CSV-ami (`allergens.csv`, `dishes.csv`, `dish_allergens.csv`, `global_dishes.csv`, `global_dish_allergens.csv`). Skrypt jest idempotentny.
 
-### 4. Dockge — utwórz stack
+### 4. GitHub Actions — build image do GHCR
+
+Obrazy buduje GitHub Actions i publikuje do GHCR (`ghcr.io/jokers1975/nowe_menu_przedszkola2`).
+Klucze `NEXT_PUBLIC_*` muszą być dostępne w build time (Next.js wpieka je do client bundle), więc dodaj je jako **Repository variables** (nie secrets — to publiczne wartości Supabase):
+
+1. GitHub → repo → **Settings → Secrets and variables → Actions → Variables → New repository variable**:
+   - `NEXT_PUBLIC_SUPABASE_URL` = `https://XXXX.supabase.co`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` = `eyJ...` (anon public key — OK w repo publicznym)
+2. Przy pierwszym pushu do `main` workflow `Build & push` buduje i taguje `:latest` + `:sha-abc123` + `:YYYYMMDD-HHmm`
+3. Pakiet pojawi się w zakładce **Packages** repo. Ustaw **Package visibility → Public**, żeby Dockge nie potrzebował logowania do GHCR
+
+### 5. Dockge — utwórz stack
 
 1. W Dockge: **Compose → New Stack**
 2. **Name**: `menu-catering`
-3. **Compose**: wklej zawartość [`compose.yaml`](./compose.yaml) z repo (Dockge sam sklonuje GitHub i zbuduje image)
+3. **Compose**: wklej zawartość [`compose.yaml`](./compose.yaml) — używa `image: ghcr.io/...:latest`, więc Dockge tylko pullje gotowy obraz (szybko)
 4. **Environment** (`.env` w Dockge):
    ```env
    NEXT_PUBLIC_SUPABASE_URL=https://XXXX.supabase.co
@@ -68,10 +79,10 @@ Potrzebny plik `download/database_export.zip` z CSV-ami (`allergens.csv`, `dishe
    OPENROUTER_API_KEY=sk-or-v1-...   # opcjonalnie
    SUPER_ADMIN_EMAIL=ty@twoja-domena.pl
    ```
-5. **Deploy** — Dockge zbuduje image z GitHuba (3–5 min przy pierwszym buildzie)
+5. **Deploy** — Dockge pullje `:latest` z GHCR (~30 s) i startuje kontener
 6. Otwórz `http://truenas.local:3000`
 
-### 5. Pierwsze logowanie
+### 6. Pierwsze logowanie
 
 1. Wejdź na `/login`, zarejestruj konto z mailem równym `SUPER_ADMIN_EMAIL`
 2. Po pierwszym logowaniu dostaniesz automatycznie rolę `super_admin`
@@ -82,7 +93,58 @@ Potrzebny plik `download/database_export.zip` z CSV-ami (`allergens.csv`, `dishe
 
 ## Aktualizacje
 
-W Dockge: **Edit stack → Update → Deploy**. Dockge zaciągnie najnowszy commit z `main` i przebuduje obraz.
+Każdy push do `main` uruchamia workflow `Build & push`, który buduje nowy obraz i taguje go jako `:latest` + `:sha-<commit>` + `:<data>`.
+
+W Dockge:
+- **Update → Deploy** — pullje najnowszy `:latest` i restartuje kontener (~30 s, bez rebuildu na serwerze)
+- Status builda widać na https://github.com/jokers1975/nowe_menu_przedszkola2/actions
+
+### Powiadomienia o nowej wersji (opcjonalnie)
+
+Dodaj **Diun** jako osobny stack w Dockge — lekki watcher, który wysyła notyfikację (Discord/Telegram/email/ntfy) gdy pojawi się nowy tag w rejestrze:
+
+```yaml
+# diun/compose.yaml
+services:
+  diun:
+    image: crazymax/diun:latest
+    container_name: diun
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/data
+    environment:
+      TZ: Europe/Warsaw
+      LOG_LEVEL: info
+      DIUN_WATCH_WORKERS: 5
+      DIUN_WATCH_SCHEDULE: "0 */30 * * * *"     # co 30 min
+      DIUN_PROVIDERS_DOCKER: true
+      DIUN_PROVIDERS_DOCKER_WATCHBYDEFAULT: true
+      # wybierz jeden notyfikator:
+      DIUN_NOTIF_NTFY_ENDPOINT: https://ntfy.sh
+      DIUN_NOTIF_NTFY_TOPIC: twoj-unikalny-topic
+```
+
+Diun obserwuje wszystkie kontenery na tym samym Dockerze i informuje o nowych tagach.
+
+Dla **auto-update bez klikania** zamień Diuna na **Watchtower** (ale wtedy produkcja rebuild'uje się sama — używaj świadomie):
+
+```yaml
+# watchtower/compose.yaml
+services:
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_POLL_INTERVAL: 900    # 15 min
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_LABEL_ENABLE: "true"
+```
+
+Wtedy dodaj label do serwisu `app` w `compose.yaml` catering: `com.centurylinklabs.watchtower.enable=true`.
 
 ---
 
