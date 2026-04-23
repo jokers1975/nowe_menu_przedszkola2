@@ -118,7 +118,7 @@ export function MenuItemEditorModal({ open, onOpenChange, dish, onSave }: MenuIt
 
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-2">Alergeny (EU 1169/2011)</label>
-          <div className="grid grid-cols-2 gap-1 max-h-64 overflow-auto border border-slate-200 rounded-md p-2">
+          <div className="grid grid-cols-2 gap-1 border border-slate-200 rounded-md p-2">
             {EU_ALLERGENS.map((a) => (
               <label
                 key={a.number}
