@@ -148,9 +148,6 @@ INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT '49d51b8e
 INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT '49d51b8e-833c-4214-a6ed-0f5cfbad5874'::uuid, id FROM allergens WHERE number = 3 ON CONFLICT DO NOTHING;
 INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT '49d51b8e-833c-4214-a6ed-0f5cfbad5874'::uuid, id FROM allergens WHERE number = 7 ON CONFLICT DO NOTHING;
 INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT '61f47b3d-1bc7-4f8d-9f25-b990194c2fc1'::uuid, id FROM allergens WHERE number = 4 ON CONFLICT DO NOTHING;
-INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT 'b8a9058d-c533-457c-964e-e22ada38fe39'::uuid, id FROM allergens WHERE number = 1 ON CONFLICT DO NOTHING;
-INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT 'b8a9058d-c533-457c-964e-e22ada38fe39'::uuid, id FROM allergens WHERE number = 3 ON CONFLICT DO NOTHING;
-INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT 'b8a9058d-c533-457c-964e-e22ada38fe39'::uuid, id FROM allergens WHERE number = 7 ON CONFLICT DO NOTHING;
 INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT '97bf22bc-dcc0-4950-a459-4cc1ea3367c1'::uuid, id FROM allergens WHERE number = 1 ON CONFLICT DO NOTHING;
 INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT '61f47b3d-1bc7-4f8d-9f25-b990194c2fc1'::uuid, id FROM allergens WHERE number = 7 ON CONFLICT DO NOTHING;
 INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT 'fa94a49f-46fa-4f30-bb2b-02c954fe9d2b'::uuid, id FROM allergens WHERE number = 1 ON CONFLICT DO NOTHING;
@@ -164,7 +161,6 @@ INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT 'e641b594
 INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT 'e641b594-071c-40fc-8bb6-380a03ef726c'::uuid, id FROM allergens WHERE number = 7 ON CONFLICT DO NOTHING;
 INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT '77c59fd2-1f53-4c75-a661-b7f676e7e277'::uuid, id FROM allergens WHERE number = 1 ON CONFLICT DO NOTHING;
 INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT '77c59fd2-1f53-4c75-a661-b7f676e7e277'::uuid, id FROM allergens WHERE number = 7 ON CONFLICT DO NOTHING;
-INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT '9c835507-8c39-4261-bea8-a43e85366f54'::uuid, id FROM allergens WHERE number = 4 ON CONFLICT DO NOTHING;
 INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT '97b50879-35dd-44e9-84d8-1a930dc2ad44'::uuid, id FROM allergens WHERE number = 3 ON CONFLICT DO NOTHING;
 INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT '97b50879-35dd-44e9-84d8-1a930dc2ad44'::uuid, id FROM allergens WHERE number = 7 ON CONFLICT DO NOTHING;
 INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT 'ae2d4ae8-797c-4f6f-9adc-12e6f659628d'::uuid, id FROM allergens WHERE number = 1 ON CONFLICT DO NOTHING;
@@ -175,7 +171,6 @@ INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT 'b1282394
 INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT 'db385718-9c19-4b7e-90be-c340358c061e'::uuid, id FROM allergens WHERE number = 1 ON CONFLICT DO NOTHING;
 INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT 'db385718-9c19-4b7e-90be-c340358c061e'::uuid, id FROM allergens WHERE number = 3 ON CONFLICT DO NOTHING;
 INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT 'db385718-9c19-4b7e-90be-c340358c061e'::uuid, id FROM allergens WHERE number = 7 ON CONFLICT DO NOTHING;
-INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT '90b3ad03-7600-4d3e-98f1-ee3384923cc3'::uuid, id FROM allergens WHERE number = 7 ON CONFLICT DO NOTHING;
 INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT 'b1282394-d539-4db3-b387-7fd987552ba9'::uuid, id FROM allergens WHERE number = 3 ON CONFLICT DO NOTHING;
 INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT 'b1282394-d539-4db3-b387-7fd987552ba9'::uuid, id FROM allergens WHERE number = 7 ON CONFLICT DO NOTHING;
 INSERT INTO global_dish_allergens (global_dish_id, allergen_id) SELECT '99813206-6494-4556-bc39-9f03d944c60c'::uuid, id FROM allergens WHERE number = 1 ON CONFLICT DO NOTHING;
