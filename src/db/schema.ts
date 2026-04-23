@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, uuid, integer, decimal, pgEnum, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, uuid, integer, decimal, pgEnum, primaryKey, jsonb } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
 // ===== APP SETTINGS (single-row, admin-managed) =====
@@ -6,6 +6,13 @@ export const appSettings = pgTable("app_settings", {
   id: integer("id").primaryKey().default(1), // enforced single row via CHECK in migration
   selectedModel: text("selected_model").notNull().default("google/gemini-2.5-flash"),
   openrouterApiKey: text("openrouter_api_key"),
+  smtpHost: text("smtp_host"),
+  smtpPort: integer("smtp_port"),
+  smtpUser: text("smtp_user"),
+  smtpPass: text("smtp_pass"),
+  smtpFromEmail: text("smtp_from_email"),
+  smtpFromName: text("smtp_from_name"),
+  smtpSecure: boolean("smtp_secure").default(true),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -28,6 +35,7 @@ export const profiles = pgTable("profiles", {
   logoUrl: text("logo_url"),
   restaurantName: text("restaurant_name"),
   servedSlots: slotTypeEnum("served_slots").array().default(["sniadanie", "drugie_sniadanie", "obiad_zupa", "obiad_danie_glowne", "podwieczorek", "kolacja"]),
+  emailRecipients: jsonb("email_recipients").$type<{ label: string; email: string }[]>().default([]),
 });
 
 export const userRoles = pgTable("user_roles", {

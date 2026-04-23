@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { format, addDays, startOfWeek } from "date-fns";
 import { pl } from "date-fns/locale";
-import { Calendar, ChefHat, FileText, Settings, Plus, Menu as MenuIcon, AlertTriangle, CheckCircle2, X, Pencil, Download, ChevronLeft, ChevronRight, Shield, Sparkles, Store } from "lucide-react";
+import { Calendar, ChefHat, FileText, Settings, Plus, Menu as MenuIcon, AlertTriangle, CheckCircle2, X, Pencil, Download, ChevronLeft, ChevronRight, Shield, Sparkles, Store, Mail, Loader2 } from "lucide-react";
 import { Drawer, DrawerContent, DrawerTrigger, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -279,6 +279,81 @@ export default function Home() {
   const [compliance, setCompliance] = useState<ComplianceResponse | null>(null);
   const [complianceOpen, setComplianceOpen] = useState(false);
 
+  const [sendMenuOpen, setSendMenuOpen] = useState(false);
+  const [sendMenuVariant, setSendMenuVariant] = useState<"parents" | "sanepid">("parents");
+  const [sendMenuLoading, setSendMenuLoading] = useState(false);
+  const [sendMenuSending, setSendMenuSending] = useState(false);
+  const [sendMenuResult, setSendMenuResult] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
+  const [sendRecipients, setSendRecipients] = useState<{ label: string; email: string }[]>([]);
+  const [sendSelected, setSendSelected] = useState<Set<string>>(new Set());
+  const [sendCustomMsg, setSendCustomMsg] = useState("");
+
+  const openSendMenu = async (variant: "parents" | "sanepid") => {
+    setSendMenuVariant(variant);
+    setSendMenuOpen(true);
+    setSendMenuResult(null);
+    setSendMenuLoading(true);
+    try {
+      const r = await fetch("/api/me/profile");
+      const data = await r.json();
+      const list = Array.isArray(data?.emailRecipients) ? data.emailRecipients : [];
+      setSendRecipients(list);
+      setSendSelected(new Set(list.map((x: { email: string }) => x.email)));
+    } catch (e) {
+      setSendMenuResult({ kind: "err", msg: String(e) });
+    } finally {
+      setSendMenuLoading(false);
+    }
+  };
+
+  const toggleSendRecipient = (email: string) => {
+    setSendSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(email)) next.delete(email);
+      else next.add(email);
+      return next;
+    });
+  };
+
+  const performSendMenu = async () => {
+    if (sendSelected.size === 0) {
+      setSendMenuResult({ kind: "err", msg: "Zaznacz przynajmniej jednego odbiorcę." });
+      return;
+    }
+    setSendMenuSending(true);
+    setSendMenuResult(null);
+    try {
+      const from = format(workingDays[0], "yyyy-MM-dd");
+      const to = format(workingDays[4], "yyyy-MM-dd");
+      const r = await fetch("/api/send-menu", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from,
+          to,
+          variant: sendMenuVariant,
+          recipientEmails: [...sendSelected],
+          message: sendCustomMsg.trim() || undefined,
+        }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        setSendMenuResult({ kind: "err", msg: data.error ?? "Błąd wysyłki." });
+      } else if (data.failed?.length > 0) {
+        setSendMenuResult({
+          kind: "err",
+          msg: `Wysłano ${data.sent}/${data.total}. Błąd: ${data.failed.map((f: { email: string; error?: string }) => `${f.email} (${f.error ?? "?"})`).join(", ")}`,
+        });
+      } else {
+        setSendMenuResult({ kind: "ok", msg: `Wysłano do ${data.sent} odbiorców.` });
+      }
+    } catch (e) {
+      setSendMenuResult({ kind: "err", msg: String(e) });
+    } finally {
+      setSendMenuSending(false);
+    }
+  };
+
   const exportPdf = (variant: "sanepid" | "parents") => {
     const from = format(workingDays[0], "yyyy-MM-dd");
     const to = format(workingDays[4], "yyyy-MM-dd");
@@ -471,6 +546,14 @@ export default function Home() {
                 <Download className="mr-2 h-4 w-4" /> PDF Sanepid
               </Button>
               <Button
+                onClick={() => openSendMenu("parents")}
+                variant="outline"
+                className="border-slate-300"
+                disabled={totalPlanned === 0}
+              >
+                <Mail className="mr-2 h-4 w-4" /> Wyślij menu
+              </Button>
+              <Button
                 onClick={handleAI}
                 disabled={generating}
                 className="bg-emerald-600 hover:bg-emerald-700"
@@ -563,6 +646,11 @@ export default function Home() {
                                 </div>
                               </div>
                               <p className="text-sm text-slate-800 font-medium leading-snug">{dish.name}</p>
+                              {dish.ingredients && dish.ingredients.length > 0 && (
+                                <p className="mt-1 text-[11px] text-slate-500 leading-snug">
+                                  {dish.ingredients.map((i) => i.name).join(", ")}
+                                </p>
+                              )}
                               <div className="mt-2 flex gap-1 flex-wrap">
                                 {dish.vegFruit && (
                                   <span className="inline-flex items-center rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">W</span>
@@ -718,6 +806,7 @@ export default function Home() {
             onOpenEditor={handleOpenEditor}
             onRemoveDish={handleRemoveDish}
             onExportPdf={exportPdf}
+            onSendMenu={openSendMenu}
             onAI={handleAI}
             generating={generating}
             validation={validation}
@@ -750,6 +839,117 @@ export default function Home() {
         onOpenChange={setComplianceOpen}
         compliance={compliance}
       />
+
+      <Dialog open={sendMenuOpen} onOpenChange={(open) => { if (!sendMenuSending) setSendMenuOpen(open); }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Wyślij menu e-mailem</DialogTitle>
+            <DialogDescription>
+              Tydzień {format(workingDays[0], "d MMM", { locale: pl })} – {format(workingDays[4], "d MMM yyyy", { locale: pl })} · wariant {sendMenuVariant === "parents" ? "dla rodziców" : "Sanepid"}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-2 block">Wariant PDF</label>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant={sendMenuVariant === "parents" ? "default" : "outline"}
+                  onClick={() => setSendMenuVariant("parents")}
+                  className={sendMenuVariant === "parents" ? "bg-emerald-600 hover:bg-emerald-700" : ""}
+                >
+                  Dla rodziców
+                </Button>
+                <Button
+                  size="sm"
+                  variant={sendMenuVariant === "sanepid" ? "default" : "outline"}
+                  onClick={() => setSendMenuVariant("sanepid")}
+                  className={sendMenuVariant === "sanepid" ? "bg-emerald-600 hover:bg-emerald-700" : ""}
+                >
+                  Sanepid
+                </Button>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-medium text-slate-600">Odbiorcy</label>
+                <Link href="/restaurant" className="text-xs text-emerald-700 hover:underline">
+                  Zarządzaj listą →
+                </Link>
+              </div>
+              {sendMenuLoading ? (
+                <p className="text-sm text-slate-400">Ładowanie…</p>
+              ) : sendRecipients.length === 0 ? (
+                <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 px-3 py-2 rounded-md">
+                  Brak odbiorców. Dodaj adresy w ustawieniach restauracji.
+                </p>
+              ) : (
+                <ul className="space-y-1 max-h-48 overflow-y-auto border border-slate-200 rounded-md">
+                  {sendRecipients.map((r) => (
+                    <li key={r.email}>
+                      <label className="flex items-start gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={sendSelected.has(r.email)}
+                          onChange={() => toggleSendRecipient(r.email)}
+                          className="mt-0.5"
+                        />
+                        <div className="flex-1 min-w-0">
+                          {r.label && <div className="text-sm text-slate-800 truncate">{r.label}</div>}
+                          <div className="text-xs text-slate-500 truncate">{r.email}</div>
+                        </div>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-2 block">
+                Wiadomość (opcjonalnie — zostaw pusto aby użyć domyślnej)
+              </label>
+              <textarea
+                value={sendCustomMsg}
+                onChange={(e) => setSendCustomMsg(e.target.value)}
+                rows={5}
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                placeholder="Dzień dobry, w załączniku przesyłamy jadłospis…"
+              />
+            </div>
+
+            {sendMenuResult && (
+              <div className={`px-3 py-2 rounded-md text-sm flex items-start gap-2 ${sendMenuResult.kind === "ok" ? "bg-emerald-50 border border-emerald-200 text-emerald-800" : "bg-rose-50 border border-rose-200 text-rose-800"}`}>
+                {sendMenuResult.kind === "ok" ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" /> : <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />}
+                <span className="break-words">{sendMenuResult.msg}</span>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setSendMenuOpen(false)}
+                disabled={sendMenuSending}
+              >
+                Anuluj
+              </Button>
+              <Button
+                onClick={performSendMenu}
+                disabled={sendMenuSending || sendMenuLoading || sendRecipients.length === 0}
+                className="bg-emerald-600 hover:bg-emerald-700"
+              >
+                {sendMenuSending ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Wysyłam…</>
+                ) : (
+                  <><Mail className="mr-2 h-4 w-4" /> Wyślij ({sendSelected.size})</>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -772,6 +972,7 @@ function MobileDayView(props: {
   onOpenEditor: (dayIndex: number, slotType: SlotType) => void;
   onRemoveDish: (dayIndex: number, slotType: SlotType) => void;
   onExportPdf: (variant: "sanepid" | "parents") => void;
+  onSendMenu: (variant: "parents" | "sanepid") => void;
   onAI: () => void;
   generating: boolean;
   validation: ValidationResult;
@@ -781,7 +982,7 @@ function MobileDayView(props: {
   const {
     day, dayIndex, isCurrentWeek, onGoToToday, weekRangeLabel, totalPlanned,
     apiError, onDismissError, onOpenPicker, onOpenEditor, onRemoveDish,
-    onExportPdf, onAI, generating, validation, loading, slotOrder: SLOT_ORDER,
+    onExportPdf, onSendMenu, onAI, generating, validation, loading, slotOrder: SLOT_ORDER,
   } = props;
   const [actionsOpen, setActionsOpen] = useState(false);
 
@@ -846,6 +1047,14 @@ function MobileDayView(props: {
                   disabled={totalPlanned === 0}
                 >
                   <Download className="mr-2 h-4 w-4" /> PDF Sanepid
+                </Button>
+                <Button
+                  onClick={() => { setActionsOpen(false); onSendMenu("parents"); }}
+                  variant="outline"
+                  className="w-full"
+                  disabled={totalPlanned === 0}
+                >
+                  <Mail className="mr-2 h-4 w-4" /> Wyślij menu e-mailem
                 </Button>
                 {!isCurrentWeek && (
                   <Button
@@ -946,6 +1155,11 @@ function MobileDayView(props: {
                 </div>
               </div>
               <h3 className="mt-2 text-base font-bold leading-snug">{dish.name}</h3>
+              {dish.ingredients && dish.ingredients.length > 0 && (
+                <p className={`mt-1 text-[11px] leading-snug ${color.timeLabel} opacity-80`}>
+                  {dish.ingredients.map((i) => i.name).join(", ")}
+                </p>
+              )}
               <div className="mt-3 flex gap-1.5 flex-wrap">
                 {dish.vegFruit && (
                   <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-medium ${color.chip}`}>

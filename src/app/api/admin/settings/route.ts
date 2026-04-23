@@ -5,6 +5,9 @@ import {
   getOpenRouterApiKey,
   setOpenRouterApiKey,
   maskApiKey,
+  getSmtpSettings,
+  setSmtpSettings,
+  type SmtpSettings,
 } from "@/lib/app-settings";
 import { checkAdmin, forbiddenResponse, getCurrentUser, unauthorizedResponse } from "@/lib/auth";
 
@@ -20,15 +23,25 @@ export async function GET() {
   const guard = await ensureAdminOrForbidden();
   if (guard) return guard;
   try {
-    const [selectedModel, apiKey] = await Promise.all([
+    const [selectedModel, apiKey, smtp] = await Promise.all([
       getSelectedModel(),
       getOpenRouterApiKey(),
+      getSmtpSettings(),
     ]);
     return Response.json({
       selectedModel,
       availableModels: AVAILABLE_MODELS,
       apiKeyMasked: maskApiKey(apiKey),
       apiKeyPresent: Boolean(apiKey),
+      smtp: {
+        host: smtp.host,
+        port: smtp.port,
+        user: smtp.user,
+        fromEmail: smtp.fromEmail,
+        fromName: smtp.fromName,
+        secure: smtp.secure,
+        passPresent: Boolean(smtp.pass),
+      },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -56,15 +69,41 @@ export async function POST(req: Request) {
       await setOpenRouterApiKey(null);
     }
 
-    const [selectedModel, apiKey] = await Promise.all([
+    const smtpBody = (body as { smtp?: Partial<SmtpSettings> }).smtp;
+    if (smtpBody && typeof smtpBody === "object") {
+      const patch: Partial<SmtpSettings> = {};
+      if ("host" in smtpBody) patch.host = smtpBody.host ?? null;
+      if ("port" in smtpBody) {
+        const p = smtpBody.port;
+        patch.port = typeof p === "number" && Number.isFinite(p) && p > 0 ? p : null;
+      }
+      if ("user" in smtpBody) patch.user = smtpBody.user ?? null;
+      if ("pass" in smtpBody && typeof smtpBody.pass === "string") patch.pass = smtpBody.pass;
+      if ("fromEmail" in smtpBody) patch.fromEmail = smtpBody.fromEmail ?? null;
+      if ("fromName" in smtpBody) patch.fromName = smtpBody.fromName ?? null;
+      if ("secure" in smtpBody) patch.secure = Boolean(smtpBody.secure);
+      await setSmtpSettings(patch);
+    }
+
+    const [selectedModel, apiKey, smtp] = await Promise.all([
       getSelectedModel(),
       getOpenRouterApiKey(),
+      getSmtpSettings(),
     ]);
     return Response.json({
       ok: true,
       selectedModel,
       apiKeyMasked: maskApiKey(apiKey),
       apiKeyPresent: Boolean(apiKey),
+      smtp: {
+        host: smtp.host,
+        port: smtp.port,
+        user: smtp.user,
+        fromEmail: smtp.fromEmail,
+        fromName: smtp.fromName,
+        secure: smtp.secure,
+        passPresent: Boolean(smtp.pass),
+      },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

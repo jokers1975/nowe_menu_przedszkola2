@@ -57,3 +57,42 @@ export function maskApiKey(key: string | null): string {
   if (key.length <= 8) return "••••";
   return `${key.slice(0, 6)}…${key.slice(-4)}`;
 }
+
+export type SmtpSettings = {
+  host: string | null;
+  port: number | null;
+  user: string | null;
+  pass: string | null;
+  fromEmail: string | null;
+  fromName: string | null;
+  secure: boolean;
+};
+
+export async function getSmtpSettings(): Promise<SmtpSettings> {
+  const row = await getRow();
+  return {
+    host: row?.smtpHost ?? null,
+    port: row?.smtpPort ?? null,
+    user: row?.smtpUser ?? null,
+    pass: row?.smtpPass ?? null,
+    fromEmail: row?.smtpFromEmail ?? null,
+    fromName: row?.smtpFromName ?? null,
+    secure: row?.smtpSecure ?? true,
+  };
+}
+
+export async function setSmtpSettings(patch: Partial<SmtpSettings>): Promise<void> {
+  const db_patch: Record<string, unknown> = { updatedAt: new Date() };
+  if ("host" in patch) db_patch.smtpHost = patch.host?.trim() || null;
+  if ("port" in patch) db_patch.smtpPort = patch.port ?? null;
+  if ("user" in patch) db_patch.smtpUser = patch.user?.trim() || null;
+  if ("pass" in patch) db_patch.smtpPass = patch.pass && patch.pass.length > 0 ? patch.pass : null;
+  if ("fromEmail" in patch) db_patch.smtpFromEmail = patch.fromEmail?.trim() || null;
+  if ("fromName" in patch) db_patch.smtpFromName = patch.fromName?.trim() || null;
+  if ("secure" in patch) db_patch.smtpSecure = patch.secure ?? true;
+
+  await db
+    .insert(appSettings)
+    .values({ id: 1, ...db_patch })
+    .onConflictDoUpdate({ target: appSettings.id, set: db_patch });
+}

@@ -240,8 +240,19 @@ END $$;
 
 -- UNIQUE zeby nie powtorzyl sie problem
 DO $$ BEGIN
-  ALTER TABLE "allergens" ADD CONSTRAINT "allergens_number_unique" UNIQUE ("number");
-EXCEPTION WHEN duplicate_object THEN null; END $$;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'allergens_number_unique'
+  ) THEN
+    IF EXISTS (
+      SELECT 1 FROM pg_class WHERE relname = 'allergens_number_unique' AND relkind = 'i'
+    ) THEN
+      ALTER TABLE "allergens" ADD CONSTRAINT "allergens_number_unique"
+        UNIQUE USING INDEX "allergens_number_unique";
+    ELSE
+      ALTER TABLE "allergens" ADD CONSTRAINT "allergens_number_unique" UNIQUE ("number");
+    END IF;
+  END IF;
+END $$;
 
 -- ---------- Rozbicie slotow kalendarza na 6 wartosci ------------------------
 ALTER TABLE "menu_items" ADD COLUMN IF NOT EXISTS "slot_type" "menu_slot_type";
@@ -261,3 +272,13 @@ ALTER TABLE "menu_items" ALTER COLUMN "slot_type" SET DEFAULT 'obiad_danie_glown
 ALTER TABLE "profiles" ADD COLUMN IF NOT EXISTS "restaurant_name" text;
 ALTER TABLE "profiles" ADD COLUMN IF NOT EXISTS "served_slots" "menu_slot_type"[]
   DEFAULT ARRAY['sniadanie','drugie_sniadanie','obiad_zupa','obiad_danie_glowne','podwieczorek','kolacja']::menu_slot_type[];
+ALTER TABLE "profiles" ADD COLUMN IF NOT EXISTS "email_recipients" jsonb DEFAULT '[]'::jsonb;
+
+-- ---------- SMTP settings (admin) -------------------------------------------
+ALTER TABLE "app_settings" ADD COLUMN IF NOT EXISTS "smtp_host" text;
+ALTER TABLE "app_settings" ADD COLUMN IF NOT EXISTS "smtp_port" integer;
+ALTER TABLE "app_settings" ADD COLUMN IF NOT EXISTS "smtp_user" text;
+ALTER TABLE "app_settings" ADD COLUMN IF NOT EXISTS "smtp_pass" text;
+ALTER TABLE "app_settings" ADD COLUMN IF NOT EXISTS "smtp_from_email" text;
+ALTER TABLE "app_settings" ADD COLUMN IF NOT EXISTS "smtp_from_name" text;
+ALTER TABLE "app_settings" ADD COLUMN IF NOT EXISTS "smtp_secure" boolean DEFAULT true;

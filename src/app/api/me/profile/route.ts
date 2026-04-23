@@ -18,6 +18,27 @@ function sanitizeSlots(input: unknown): SlotType[] {
   return ALL_SLOTS.filter((s) => valid.has(s));
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+type EmailRecipient = { label: string; email: string };
+
+function sanitizeRecipients(input: unknown): EmailRecipient[] {
+  if (!Array.isArray(input)) return [];
+  const out: EmailRecipient[] = [];
+  const seen = new Set<string>();
+  for (const r of input) {
+    if (!r || typeof r !== "object") continue;
+    const label = typeof (r as { label?: unknown }).label === "string" ? (r as { label: string }).label.trim() : "";
+    const email = typeof (r as { email?: unknown }).email === "string" ? (r as { email: string }).email.trim().toLowerCase() : "";
+    if (!email || !EMAIL_RE.test(email) || email.length > 254) continue;
+    if (seen.has(email)) continue;
+    seen.add(email);
+    out.push({ label: label.slice(0, 100), email });
+    if (out.length >= 50) break;
+  }
+  return out;
+}
+
 export async function GET() {
   try {
     const userId = await getCurrentUserId();
@@ -26,6 +47,7 @@ export async function GET() {
         logoUrl: profiles.logoUrl,
         restaurantName: profiles.restaurantName,
         servedSlots: profiles.servedSlots,
+        emailRecipients: profiles.emailRecipients,
       })
       .from(profiles)
       .where(eq(profiles.id, userId))
@@ -35,6 +57,7 @@ export async function GET() {
       logoUrl: row?.logoUrl ?? null,
       restaurantName: row?.restaurantName ?? null,
       servedSlots: (row?.servedSlots as SlotType[] | null) ?? ALL_SLOTS,
+      emailRecipients: (row?.emailRecipients as EmailRecipient[] | null) ?? [],
     });
   } catch (err) {
     if (err instanceof UnauthorizedError) return unauthorizedResponse();
@@ -49,6 +72,7 @@ export async function PUT(req: NextRequest) {
       logoUrl?: string | null;
       restaurantName?: string | null;
       servedSlots?: string[];
+      emailRecipients?: unknown;
     };
 
     const patch: Record<string, unknown> = { updatedAt: new Date() };
@@ -77,6 +101,10 @@ export async function PUT(req: NextRequest) {
       patch.servedSlots = sanitizeSlots(body.servedSlots);
     }
 
+    if ("emailRecipients" in body) {
+      patch.emailRecipients = sanitizeRecipients(body.emailRecipients);
+    }
+
     await db
       .insert(profiles)
       .values({ id: userId, ...patch })
@@ -90,6 +118,7 @@ export async function PUT(req: NextRequest) {
         logoUrl: profiles.logoUrl,
         restaurantName: profiles.restaurantName,
         servedSlots: profiles.servedSlots,
+        emailRecipients: profiles.emailRecipients,
       })
       .from(profiles)
       .where(eq(profiles.id, userId))
@@ -100,6 +129,7 @@ export async function PUT(req: NextRequest) {
       logoUrl: row?.logoUrl ?? null,
       restaurantName: row?.restaurantName ?? null,
       servedSlots: (row?.servedSlots as SlotType[] | null) ?? ALL_SLOTS,
+      emailRecipients: (row?.emailRecipients as EmailRecipient[] | null) ?? [],
     });
   } catch (err) {
     if (err instanceof UnauthorizedError) return unauthorizedResponse();

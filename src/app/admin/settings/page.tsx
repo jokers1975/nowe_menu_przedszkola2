@@ -10,11 +10,22 @@ interface ModelOption {
   label: string;
 }
 
+interface SmtpResponse {
+  host: string | null;
+  port: number | null;
+  user: string | null;
+  fromEmail: string | null;
+  fromName: string | null;
+  secure: boolean;
+  passPresent: boolean;
+}
+
 interface SettingsResponse {
   selectedModel: string;
   availableModels: readonly ModelOption[];
   apiKeyMasked: string;
   apiKeyPresent: boolean;
+  smtp: SmtpResponse;
 }
 
 export default function AdminSettingsPage() {
@@ -32,6 +43,18 @@ export default function AdminSettingsPage() {
   const [logoSaving, setLogoSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [smtpHost, setSmtpHost] = useState("");
+  const [smtpPort, setSmtpPort] = useState<string>("");
+  const [smtpUser, setSmtpUser] = useState("");
+  const [smtpPass, setSmtpPass] = useState("");
+  const [smtpPassPresent, setSmtpPassPresent] = useState(false);
+  const [smtpFromEmail, setSmtpFromEmail] = useState("");
+  const [smtpFromName, setSmtpFromName] = useState("");
+  const [smtpSecure, setSmtpSecure] = useState(true);
+  const [smtpSaving, setSmtpSaving] = useState(false);
+  const [smtpTesting, setSmtpTesting] = useState(false);
+  const [smtpTestTo, setSmtpTestTo] = useState("");
+
   const loadSettings = () => {
     return fetch("/api/admin/settings")
       .then((r) => r.json() as Promise<SettingsResponse | { error: string }>)
@@ -43,6 +66,14 @@ export default function AdminSettingsPage() {
           setSelected(data.selectedModel);
           setApiKeyMasked(data.apiKeyMasked);
           setApiKeyPresent(data.apiKeyPresent);
+          const s = data.smtp;
+          setSmtpHost(s?.host ?? "");
+          setSmtpPort(s?.port ? String(s.port) : "");
+          setSmtpUser(s?.user ?? "");
+          setSmtpFromEmail(s?.fromEmail ?? "");
+          setSmtpFromName(s?.fromName ?? "");
+          setSmtpSecure(s?.secure ?? true);
+          setSmtpPassPresent(Boolean(s?.passPresent));
         }
       })
       .catch((e) => setStatus({ kind: "err", msg: String(e) }));
@@ -143,6 +174,65 @@ export default function AdminSettingsPage() {
       setStatus({ kind: "err", msg: String(e) });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveSmtp = async () => {
+    setSmtpSaving(true);
+    setStatus(null);
+    try {
+      const smtp: Record<string, unknown> = {
+        host: smtpHost.trim() || null,
+        port: smtpPort.trim() ? Number(smtpPort.trim()) : null,
+        user: smtpUser.trim() || null,
+        fromEmail: smtpFromEmail.trim() || null,
+        fromName: smtpFromName.trim() || null,
+        secure: smtpSecure,
+      };
+      if (smtpPass.length > 0) smtp.pass = smtpPass;
+      const res = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ smtp }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setStatus({ kind: "err", msg: data.error ?? "Błąd zapisu SMTP." });
+      } else {
+        setStatus({ kind: "ok", msg: "SMTP zapisane." });
+        setSmtpPass("");
+        setSmtpPassPresent(Boolean(data.smtp?.passPresent));
+      }
+    } catch (e) {
+      setStatus({ kind: "err", msg: String(e) });
+    } finally {
+      setSmtpSaving(false);
+    }
+  };
+
+  const handleTestSmtp = async () => {
+    if (!smtpTestTo.trim()) {
+      setStatus({ kind: "err", msg: "Podaj adres testowy." });
+      return;
+    }
+    setSmtpTesting(true);
+    setStatus(null);
+    try {
+      const res = await fetch("/api/admin/settings/smtp-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: smtpTestTo.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setStatus({ kind: "err", msg: data.error ?? "Błąd wysyłki testowej." });
+      } else {
+        setStatus({ kind: "ok", msg: "Mail testowy wysłany." });
+      }
+    } catch (e) {
+      setStatus({ kind: "err", msg: String(e) });
+    } finally {
+      setSmtpTesting(false);
     }
   };
 
@@ -275,6 +365,117 @@ export default function AdminSettingsPage() {
                     <p className="text-xs text-slate-500">
                       PNG/JPEG/WEBP/SVG do 2000KB. Pokazywane w nagłówku wydruku dla rodziców.
                     </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
+              <div>
+                <h2 className="text-base font-semibold text-slate-800 mb-1">Serwer SMTP (wysyłka menu)</h2>
+                <p className="text-xs text-slate-500 mb-4">
+                  Konfiguracja do wysyłki gotowego PDF z menu na adresy odbiorców. Dla Gmail użyj hasła aplikacji.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Host</label>
+                    <Input
+                      type="text"
+                      value={smtpHost}
+                      onChange={(e) => setSmtpHost(e.target.value)}
+                      placeholder="smtp.gmail.com"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Port</label>
+                    <Input
+                      type="number"
+                      value={smtpPort}
+                      onChange={(e) => setSmtpPort(e.target.value)}
+                      placeholder="465"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={smtpSecure}
+                        onChange={(e) => setSmtpSecure(e.target.checked)}
+                        className="h-4 w-4"
+                      />
+                      SSL/TLS (port 465: włącz; 587: wyłącz)
+                    </label>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Użytkownik</label>
+                    <Input
+                      type="text"
+                      value={smtpUser}
+                      onChange={(e) => setSmtpUser(e.target.value)}
+                      placeholder="konto@gmail.com"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Hasło {smtpPassPresent && <span className="text-emerald-700">(zapisane)</span>}
+                    </label>
+                    <Input
+                      type="password"
+                      value={smtpPass}
+                      onChange={(e) => setSmtpPass(e.target.value)}
+                      placeholder={smtpPassPresent ? "Wpisz, aby nadpisać…" : "hasło aplikacji"}
+                      autoComplete="new-password"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Nadawca (e-mail)</label>
+                    <Input
+                      type="email"
+                      value={smtpFromEmail}
+                      onChange={(e) => setSmtpFromEmail(e.target.value)}
+                      placeholder="menu@mojarestauracja.pl"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Nadawca (nazwa)</label>
+                    <Input
+                      type="text"
+                      value={smtpFromName}
+                      onChange={(e) => setSmtpFromName(e.target.value)}
+                      placeholder="Moja Restauracja"
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    onClick={handleSaveSmtp}
+                    disabled={smtpSaving}
+                    className="bg-emerald-600 hover:bg-emerald-700"
+                  >
+                    {smtpSaving ? "Zapisywanie…" : "Zapisz SMTP"}
+                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="email"
+                      value={smtpTestTo}
+                      onChange={(e) => setSmtpTestTo(e.target.value)}
+                      placeholder="test@adres.pl"
+                      className="w-56"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleTestSmtp}
+                      disabled={smtpTesting}
+                    >
+                      {smtpTesting ? "Wysyłam…" : "Wyślij test"}
+                    </Button>
                   </div>
                 </div>
               </div>

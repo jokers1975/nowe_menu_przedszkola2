@@ -1,13 +1,15 @@
 import { db } from "@/db";
 import {
   allergens,
+  dishIngredients,
   globalDishAllergens,
+  globalDishIngredients,
   ingredientAllergens,
   menuItems,
   preparedProducts,
   rawIngredients,
 } from "@/db/schema";
-import { and, between, eq, inArray } from "drizzle-orm";
+import { and, asc, between, eq, inArray } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { UnauthorizedError, getCurrentUserId, unauthorizedResponse } from "@/lib/auth";
 import {
@@ -141,6 +143,43 @@ export async function GET(req: NextRequest) {
       globalAllergensByDishId.set(row.globalDishId, arr);
     }
 
+    // Składniki z biblioteki dań (global + user) po sourceDishId — do pokazania w kalendarzu.
+    type DishIngredientRow = { name: string; quantity: number | null; unit: string };
+    const ingredientsByDishId = new Map<string, DishIngredientRow[]>();
+    if (sourceDishIds.length) {
+      const globalIngRows = await db
+        .select({
+          dishId: globalDishIngredients.globalDishId,
+          name: globalDishIngredients.ingredientName,
+          quantity: globalDishIngredients.quantity,
+          unit: globalDishIngredients.unit,
+        })
+        .from(globalDishIngredients)
+        .where(inArray(globalDishIngredients.globalDishId, sourceDishIds))
+        .orderBy(asc(globalDishIngredients.positionOrder));
+      for (const r of globalIngRows) {
+        const arr = ingredientsByDishId.get(r.dishId) ?? [];
+        arr.push({ name: r.name, quantity: r.quantity, unit: r.unit });
+        ingredientsByDishId.set(r.dishId, arr);
+      }
+      const userIngRows = await db
+        .select({
+          dishId: dishIngredients.dishId,
+          name: dishIngredients.ingredientName,
+          quantity: dishIngredients.quantity,
+          unit: dishIngredients.unit,
+        })
+        .from(dishIngredients)
+        .where(inArray(dishIngredients.dishId, sourceDishIds))
+        .orderBy(asc(dishIngredients.positionOrder));
+      for (const r of userIngRows) {
+        if (ingredientsByDishId.has(r.dishId)) continue;
+        const arr = ingredientsByDishId.get(r.dishId) ?? [];
+        arr.push({ name: r.name, quantity: r.quantity, unit: r.unit });
+        ingredientsByDishId.set(r.dishId, arr);
+      }
+    }
+
     const output = items.map((m) => {
       const pps = productsByMenuItemId.get(m.id) ?? [];
       const allergenSet = new Set<number>();
@@ -152,6 +191,21 @@ export async function GET(req: NextRequest) {
       if (allergenSet.size === 0 && m.sourceDishId) {
         for (const n of globalAllergensByDishId.get(m.sourceDishId) ?? []) allergenSet.add(n);
       }
+      // Spróbuj nazwy składników — najpierw z biblioteki (sourceDishId),
+      // potem z prepared_products (odfiltruj placeholder "—").
+      const libIngs = m.sourceDishId ? ingredientsByDishId.get(m.sourceDishId) ?? [] : [];
+      const ppIngs: DishIngredientRow[] = [];
+      if (libIngs.length === 0) {
+        for (const p of pps) {
+          for (const ing of p.rawIngredients) {
+            if (ing.name && ing.name !== "—") {
+              ppIngs.push({ name: ing.name, quantity: ing.rawWeightG || null, unit: ing.unit });
+            }
+          }
+        }
+      }
+      const flatIngredients = libIngs.length ? libIngs : ppIngs;
+
       const dish: Dish = {
         id: m.sourceDishId ?? m.id,
         name: m.displayName,
@@ -159,6 +213,7 @@ export async function GET(req: NextRequest) {
         diet: m.dietType,
         vegFruit,
         allergens: [...allergenSet].sort((a, b) => a - b),
+        ingredients: flatIngredients,
         preparedProducts: pps,
       };
       // m.date to timestamp → normalizuj do YYYY-MM-DD żeby klient mógł filtrować po stringu.

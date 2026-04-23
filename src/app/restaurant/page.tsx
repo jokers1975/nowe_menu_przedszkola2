@@ -4,13 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Upload, Trash2, CheckCircle2, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Upload, Trash2, CheckCircle2, AlertTriangle, Plus, X } from "lucide-react";
 import { ALL_SLOTS, SLOT_LABELS, type SlotType } from "@/lib/sanepid-brain";
+
+type EmailRecipient = { label: string; email: string };
 
 interface ProfileResponse {
   logoUrl: string | null;
   restaurantName: string | null;
   servedSlots: SlotType[];
+  emailRecipients: EmailRecipient[];
 }
 
 export default function RestaurantSettingsPage() {
@@ -22,7 +25,12 @@ export default function RestaurantSettingsPage() {
   const [restaurantName, setRestaurantName] = useState<string>("");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [servedSlots, setServedSlots] = useState<SlotType[]>(ALL_SLOTS);
+  const [recipients, setRecipients] = useState<EmailRecipient[]>([]);
+  const [newLabel, setNewLabel] = useState("");
+  const [newEmail, setNewEmail] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   const load = () => {
     return fetch("/api/me/profile")
@@ -34,6 +42,7 @@ export default function RestaurantSettingsPage() {
           setRestaurantName(data.restaurantName ?? "");
           setLogoUrl(data.logoUrl);
           setServedSlots(data.servedSlots.length > 0 ? data.servedSlots : ALL_SLOTS);
+          setRecipients(Array.isArray(data.emailRecipients) ? data.emailRecipients : []);
         }
       })
       .catch((e) => setStatus({ kind: "err", msg: String(e) }));
@@ -61,6 +70,7 @@ export default function RestaurantSettingsPage() {
         body: JSON.stringify({
           restaurantName: restaurantName.trim() || null,
           servedSlots,
+          emailRecipients: recipients,
         }),
       });
       const data = await res.json();
@@ -108,6 +118,31 @@ export default function RestaurantSettingsPage() {
       setLogoSaving(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  };
+
+  const addRecipient = () => {
+    const email = newEmail.trim().toLowerCase();
+    const label = newLabel.trim();
+    if (!email || !EMAIL_RE.test(email)) {
+      setStatus({ kind: "err", msg: "Podaj poprawny adres e-mail." });
+      return;
+    }
+    if (recipients.some((r) => r.email === email)) {
+      setStatus({ kind: "err", msg: "Ten adres już jest na liście." });
+      return;
+    }
+    if (recipients.length >= 50) {
+      setStatus({ kind: "err", msg: "Maksimum 50 odbiorców." });
+      return;
+    }
+    setRecipients([...recipients, { label: label.slice(0, 100), email }]);
+    setNewLabel("");
+    setNewEmail("");
+    setStatus(null);
+  };
+
+  const removeRecipient = (email: string) => {
+    setRecipients(recipients.filter((r) => r.email !== email));
   };
 
   const handleLogoClear = async () => {
@@ -220,6 +255,58 @@ export default function RestaurantSettingsPage() {
                   </label>
                 ))}
               </div>
+            </section>
+
+            <section className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-3">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-700">Odbiorcy menu (e-mail)</h2>
+                <p className="text-xs text-slate-500">Adresy, na które wyślemy gotowe PDF z menu tygodniowym. Etykieta to nazwa placówki (np. „Przedszkole Słoneczko").</p>
+              </div>
+
+              {recipients.length > 0 && (
+                <ul className="space-y-1">
+                  {recipients.map((r) => (
+                    <li key={r.email} className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-md">
+                      <div className="flex-1 min-w-0">
+                        {r.label && <div className="text-sm text-slate-800 truncate">{r.label}</div>}
+                        <div className="text-xs text-slate-500 truncate">{r.email}</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeRecipient(r.email)}
+                        className="text-slate-400 hover:text-rose-600 p-1"
+                        aria-label="Usuń odbiorcę"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-[1fr,1fr,auto] gap-2">
+                <Input
+                  value={newLabel}
+                  onChange={(e) => setNewLabel(e.target.value)}
+                  placeholder="Etykieta (np. Przedszkole Słoneczko)"
+                />
+                <Input
+                  type="email"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  placeholder="adres@przedszkole.pl"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addRecipient();
+                    }
+                  }}
+                />
+                <Button type="button" variant="outline" onClick={addRecipient}>
+                  <Plus className="mr-1 h-4 w-4" /> Dodaj
+                </Button>
+              </div>
+              <p className="text-xs text-slate-500">Pamiętaj, żeby zapisać ustawienia poniżej — zmiany są tylko lokalne do momentu kliknięcia „Zapisz ustawienia".</p>
             </section>
 
             <div className="flex justify-end">
